@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  App as AntApp, Row, Col, Card, Statistic, Tabs, Button, Switch, Drawer, Modal, Form, Input, Steps,
+  App as AntApp, Row, Col, Card, Tabs, Button, Switch, Drawer, Modal, Form, Input, Steps,
   Space, Empty, Tag, Popconfirm, message,
 } from 'antd'
 import {
@@ -13,7 +13,6 @@ import TriggerIcon from '../components/TriggerIcon.jsx'
 
 export default function MarketPage() {
   const { message: msgApi } = AntApp.useApp()
-  const [stats, setStats] = useState(null)
   const [rules, setRules] = useState([])
   const [templates, setTemplates] = useState([])
 
@@ -24,8 +23,7 @@ export default function MarketPage() {
 
   const loadAll = async () => {
     try {
-      const [s, r, t] = await Promise.all([api.stats(), api.listMyRules(), api.listTemplates()])
-      setStats(s)
+      const [r, t] = await Promise.all([api.listMyRules(), api.listTemplates()])
       setRules(r.items)
       setTemplates(t.items)
     } catch (e) {
@@ -120,48 +118,6 @@ export default function MarketPage() {
           <span className="hc-node"><CheckCircleTwoTone twoToneColor="#52c41a" /> 任务完成</span>
         </div>
       </div>
-
-      {/* 统计卡 */}
-      {stats && (
-        <Row gutter={[16, 16]} className="stat-row">
-          <Col xs={12} md={6}>
-            <Card className="stat-card" hoverable>
-              <Statistic
-                title="我的任务"
-                value={stats.ruleCount}
-                prefix={<span className="stat-icon" style={{ background: '#fff3ec', color: '#fa541c' }}><RocketOutlined /></span>}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card className="stat-card" hoverable>
-              <Statistic
-                title="已启用"
-                value={stats.enabledCount}
-                prefix={<span className="stat-icon" style={{ background: '#e6f7ee', color: '#18a058' }}><BellOutlined /></span>}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card className="stat-card" hoverable>
-              <Statistic
-                title="公共模板"
-                value={stats.templateCount}
-                prefix={<span className="stat-icon" style={{ background: '#f0f5ff', color: '#2563eb' }}><AppstoreAddOutlined /></span>}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card className="stat-card" hoverable>
-              <Statistic
-                title="累计执行"
-                value={stats.totalRuns}
-                prefix={<span className="stat-icon" style={{ background: '#fff7e6', color: '#d48806' }}><ThunderboltOutlined /></span>}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
 
       {/* Tabs：我的任务 / 模板市场 */}
       <Tabs

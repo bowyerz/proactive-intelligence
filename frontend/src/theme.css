@@ -400,49 +400,6 @@ body {
   color: var(--coral);
 }
 
-/* ---------- 统计卡 ---------- */
-.stat-row {
-  margin-bottom: 22px;
-}
-
-.stat-card {
-  border-radius: 12px;
-  transition: all 0.2s ease;
-  border-color: var(--border) !important;
-}
-
-.stat-card :where(.ant-card-body) {
-  padding: 16px 18px;
-}
-
-.stat-card:hover {
-  border-color: #ffd7c4 !important;
-  box-shadow: 0 8px 20px rgba(250, 84, 28, 0.08);
-  transform: translateY(-2px);
-}
-
-.stat-card :where(.ant-statistic-title) {
-  color: var(--muted);
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-
-.stat-card :where(.ant-statistic-content) {
-  font-weight: 700;
-  font-size: 26px;
-  line-height: 1.2;
-}
-
-.stat-icon {
-  width: 36px;
-  height: 36px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 9px;
-  font-size: 17px;
-  margin-right: 4px;
-}
-
 /* ---------- 过滤栏 ---------- */
 .filter-bar {
   margin-bottom: 20px;
