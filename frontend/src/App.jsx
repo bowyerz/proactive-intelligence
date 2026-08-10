@@ -9,9 +9,9 @@ import DeveloperPage from './pages/DeveloperPage.jsx'
 import ReviewPage from './pages/ReviewPage.jsx'
 
 const ROLES = [
-  { key: 'user', path: '/', label: '事件市场', icon: <ShopOutlined />, hint: '个人虾用户 / 访客' },
-  { key: 'developer', path: '/developer', label: '开发者工作台', icon: <ToolOutlined />, hint: '提交会触发动作的技能' },
-  { key: 'admin', path: '/admin', label: '审核工作台', icon: <SafetyCertificateOutlined />, hint: '平台管理员' },
+  { key: 'user', path: '/', label: '我的任务', icon: <ShopOutlined />, hint: '🦞 个人虾：创建 / 启用 / 触发你自己的主动智能规则' },
+  { key: 'developer', path: '/developer', label: '模板策划', icon: <ToolOutlined />, hint: '🛠️ 开发者：提交触发器 × 默认动作的模板提案' },
+  { key: 'admin', path: '/admin', label: '所有任务审核', icon: <SafetyCertificateOutlined />, hint: '✅ 管理员：审核用户提交的规则与开发者提交的模板提案' },
 ]
 
 export default function App() {
@@ -58,7 +58,7 @@ export default function App() {
           <Tag color="orange" style={{ marginRight: 0 }}>
             Demo · 无登录
           </Tag>
-          <Tooltip title="把所有数据恢复到初始演示状态（5 个上架 + 1 个待审核）">
+          <Tooltip title="把所有数据恢复到初始演示状态（3 个已启用规则 + 1 个草稿规则 + 1 个待审用户规则 + 5 个公共模板 + 1 个待审模板）">
             <Button size="small" icon={<ReloadOutlined />} loading={resetting} onClick={onReset}>
               重置演示
             </Button>

@@ -675,3 +675,321 @@ body {
     width: 100%;
   }
 }
+
+/* ---------- 触发器选择卡（向导步骤 1）---------- */
+.trigger-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.trigger-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.18s ease;
+}
+
+.trigger-tile:hover {
+  border-color: #ffd7c4;
+  background: #fffaf6;
+  transform: translateY(-2px);
+}
+
+.trigger-tile.selected {
+  border-color: var(--coral);
+  background: #fff3ec;
+  box-shadow: 0 8px 24px rgba(250, 84, 28, 0.12);
+}
+
+.trigger-tile .tt-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 22px;
+  background: #fff3ec;
+  color: var(--coral);
+}
+
+.trigger-tile.selected .tt-icon {
+  background: var(--coral);
+  color: #fff;
+}
+
+.trigger-tile .tt-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.trigger-tile .tt-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ---------- 我的任务行（截图 1）---------- */
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  transition: all 0.18s ease;
+  cursor: pointer;
+}
+
+.rule-row:hover {
+  border-color: #ffd7c4;
+  background: #fffaf6;
+  box-shadow: 0 6px 18px rgba(250, 84, 28, 0.06);
+}
+
+.rule-row.disabled {
+  opacity: 0.6;
+}
+
+.rule-row .rr-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rule-row .rr-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.rule-row .rr-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.rule-row .rr-arrow {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+/* ---------- 详情头部 ---------- */
+.detail-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+
+.detail-hero .dh-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-hero .dh-title {
+  font-size: 17px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-hero .dh-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.detail-hero .dh-action {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fffaf6;
+  border-left: 3px solid var(--coral);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  color: #3f3f46;
+  line-height: 1.6;
+}
+
+/* ---------- 执行历史行（截图 5）---------- */
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.run-row:last-child {
+  border-bottom: none;
+}
+
+.run-row .rr-time {
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 170px;
+}
+
+.run-row .rr-tokens {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+.run-row .rr-summary {
+  flex: 1;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 0 12px;
+}
+
+.run-row .rr-arrow {
+  color: #c4c4cc;
+  font-size: 18px;
+}
+
+/* ---------- 模板库卡 ---------- */
+.tpl-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  transition: all 0.18s ease;
+}
+
+.tpl-card:hover {
+  border-color: #ffd7c4;
+  box-shadow: 0 6px 18px rgba(250, 84, 28, 0.08);
+  transform: translateY(-2px);
+}
+
+.tpl-card .tc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tpl-card .tc-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tpl-card .tc-desc {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.55;
+  flex: 1;
+}
+
+.tpl-card .tc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+/* ---------- 规则预览卡（向导步骤 3）---------- */
+.preview-card {
+  background: #f6f9ff;
+  border: 1px solid #dbe6ff;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.preview-card .pc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview-card .pc-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.preview-card .pc-desc {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.preview-card .pc-action {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #3f3f46;
+  line-height: 1.6;
+  background: #fff;
+  border: 1px dashed #d1d5db;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+/* ---------- 审核队列简化卡 ---------- */
+.review-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.18s ease;
+}
+
+.review-card:hover {
+  border-color: #ffd7c4;
+  box-shadow: 0 6px 18px rgba(250, 84, 28, 0.08);
+}
+
+.review-card .rc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-card .rc-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.review-card .rc-desc {
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.review-card .rc-action {
+  margin: 10px 0 12px;
+  font-size: 13.5px;
+  color: #3f3f46;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.review-card .rc-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

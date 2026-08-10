@@ -1,52 +1,31 @@
 import { useEffect, useState } from 'react'
 import {
-  App as AntApp, Button, Collapse, Drawer, Empty, Input, List, Space, Spin, Tag, message,
+  App as AntApp, Button, Space, Tag, Modal, Input, Form, Empty, Statistic, Row, Col, Card,
 } from 'antd'
-import {
-  CheckCircleTwoTone, CloseCircleTwoTone, EditOutlined, CheckOutlined,
-} from '@ant-design/icons'
-import { api, STATUS_META, SOURCE_COLORS, CATEGORY_LABELS } from '../api.js'
-import SourceIcon from '../components/SourceIcon.jsx'
-import Markdown from '../components/Markdown.jsx'
-import JsonBlock from '../components/JsonBlock.jsx'
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
+import { api, RULE_STATUS_META, TEMPLATE_STATUS_META, TRIGGER_MAP } from '../api.js'
+import TriggerIcon from '../components/TriggerIcon.jsx'
 
 const REVIEWER = '平台管理员'
 
-function CheckRow({ item }) {
-  const ok = item.suggested
-  return (
-    <List.Item>
-      <Space>
-        {ok ? (
-          <CheckCircleTwoTone twoToneColor="#52c41a" />
-        ) : (
-          <CloseCircleTwoTone twoToneColor="#fa541c" />
-        )}
-        <span style={{ textDecoration: ok ? 'none' : 'line-through', color: ok ? '' : '#9ca3af' }}>
-          {item.label}
-        </span>
-      </Space>
-    </List.Item>
-  )
+// 触发器展示名：自定义规则用 customName，其余用 TRIGGER_MAP
+function triggerLabelOf(item) {
+  if (item.trigger === 'custom' && item.customName) return item.customName
+  return TRIGGER_MAP[item.trigger]?.name || item.trigger
 }
 
 export default function ReviewPage() {
   const { message } = AntApp.useApp()
-  const [pending, setPending] = useState([])
-  const [reviewed, setReviewed] = useState([])
+  const [queue, setQueue] = useState({ pending: [], reviewed: [], pendingCount: 0, rulePending: 0, templatePending: 0 })
   const [loading, setLoading] = useState(true)
-  const [openId, setOpenId] = useState(null)
-  const [detail, setDetail] = useState(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [rejectTarget, setRejectTarget] = useState(null)
+  const [form] = Form.useForm()
 
   const load = async () => {
     setLoading(true)
     try {
-      const r = await api.reviewQueue()
-      setPending(r.pending)
-      setReviewed(r.reviewed)
+      const q = await api.reviewQueue()
+      setQueue(q)
     } catch (e) {
       message.error(e.message || '加载失败')
     } finally {
@@ -54,195 +33,190 @@ export default function ReviewPage() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { load() }, [])
 
-  const openReview = async (id) => {
-    setOpenId(id)
-    setNote('')
-    setDetailLoading(true)
+  // 根据 kind 走不同的审核函数（规则走 reviewRule，模板走 reviewTemplate）
+  const approve = async (item) => {
     try {
-      const d = await api.reviewDetail(id)
-      setDetail(d)
-    } catch (e) {
-      message.error(e.message || '加载失败')
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
-  const decide = async (decision) => {
-    if ((decision === 'reject' || decision === 'request_changes') && !note.trim()) {
-      message.warning('驳回 / 要求修改时必须填写理由')
-      return
-    }
-    setBusy(true)
-    try {
-      const r = await api.review(openId, { decision, note: note.trim(), reviewer: REVIEWER })
-      const label = { approve: '已通过并上架', reject: '已驳回', request_changes: '已要求修改' }[decision]
-      message.success(`${label}：${r.name}`)
-      setOpenId(null)
-      setDetail(null)
+      const fn = item.kind === 'rule' ? api.reviewRule : api.reviewTemplate
+      const verb = item.kind === 'rule' ? '启用' : '上架公共模板市场'
+      await fn(item.id, { decision: 'approve', reviewer: REVIEWER })
+      message.success(`已通过「${item.name}」— 立即${verb}`)
       load()
     } catch (e) {
       message.error(e.message || '操作失败')
-    } finally {
-      setBusy(false)
     }
   }
 
+  const openReject = (item) => {
+    setRejectTarget(item)
+    form.resetFields()
+  }
+
+  const submitReject = async () => {
+    const v = await form.validateFields()
+    try {
+      const fn = rejectTarget.kind === 'rule' ? api.reviewRule : api.reviewTemplate
+      await fn(rejectTarget.id, { decision: 'reject', reviewer: REVIEWER, note: v.reason })
+      message.success('已驳回')
+      setRejectTarget(null)
+      load()
+    } catch (e) {
+      message.error(e.message || '操作失败')
+    }
+  }
+
+  const approvedCount = queue.reviewed.filter((t) => t.status === 'active').length
+  const rejectedCount = queue.reviewed.filter((t) => t.status === 'rejected').length
+
   return (
     <div>
-      <h1 className="page-title">审核工作台</h1>
-      <p className="page-sub">
-        待审核事件 <Tag color="processing">{pending.length}</Tag> 条。审核通过上架后，用户订阅即由个人虾主动执行动作。
-      </p>
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 60 }}>
-          <Spin />
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} align="end">
+        <div>
+          <h1 className="page-title">所有任务审核</h1>
+          <p className="page-sub">
+            待审核 <Tag color="processing">{queue.pendingCount}</Tag> 条 —
+            含 <b>用户规则</b> {queue.rulePending} 条、<b>模板提案</b> {queue.templatePending} 条。
+            通过后用户规则立即启用、模板上架公共市场。
+          </p>
         </div>
-      ) : pending.length === 0 ? (
-        <Empty description="🎉 暂无待审核事件，队列已清空" />
+      </Space>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 22 }}>
+        <Col xs={12} md={8}>
+          <Card className="stat-card" hoverable>
+            <Statistic title="待审核" value={queue.pendingCount} valueStyle={{ color: '#fa8c16' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={8}>
+          <Card className="stat-card" hoverable>
+            <Statistic title="已通过" value={approvedCount} valueStyle={{ color: '#18a058' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={8}>
+          <Card className="stat-card" hoverable>
+            <Statistic title="已驳回" value={rejectedCount} valueStyle={{ color: '#cf1322' }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <div className="section-label" style={{ marginTop: 6 }}>
+        待审核（{queue.pending.length}）
+      </div>
+      {loading ? null : queue.pending.length === 0 ? (
+        <Empty description="太棒了，没有需要审核的任务 ✨" style={{ padding: '30px 0' }} />
       ) : (
-        <List
-          grid={{ gutter: 16, column: 2 }}
-          dataSource={pending}
-          renderItem={(ev) => (
-            <List.Item>
-              <div
-                className="event-card"
-                style={{ cursor: 'pointer' }}
-                onClick={() => openReview(ev.id)}
-              >
-                <div className="card-head">
-                  <SourceIcon source={ev.source} size={42} />
-                  <div style={{ minWidth: 0 }}>
-                    <div className="card-name">{ev.name}</div>
-                    <div className="card-id">{ev.id}</div>
-                  </div>
-                </div>
-                <div className="card-desc">{ev.description}</div>
-                <div className="card-foot">
-                  <Space size={4} wrap>
-                    <Tag color={SOURCE_COLORS[ev.source] || 'purple'}>{ev.source}</Tag>
-                    {(ev.categoryLabels || []).slice(0, 2).map((c) => (
-                      <Tag key={c} bordered={false}>{c}</Tag>
-                    ))}
-                  </Space>
-                  <Tag color="processing">审核中</Tag>
-                </div>
-              </div>
-            </List.Item>
-          )}
-        />
+        queue.pending.map((item) => (
+          <PendingItemCard
+            key={`${item.kind}_${item.id}`}
+            item={item}
+            onApprove={() => approve(item)}
+            onReject={() => openReject(item)}
+          />
+        ))
       )}
 
-      {reviewed.length > 0 && (
-        <Collapse style={{ marginTop: 24 }} items={[
-          {
-            key: 'history',
-            label: `已审核记录（${reviewed.length}）`,
-            children: (
-              <List
-                size="small"
-                dataSource={reviewed}
-                renderItem={(ev) => (
-                  <List.Item>
-                    <Space>
-                      <SourceIcon source={ev.source} size={26} />
-                      <span style={{ fontWeight: 600 }}>{ev.name}</span>
-                      <span className="card-id">{ev.id}</span>
-                      <Tag color={(STATUS_META[ev.status] || STATUS_META.draft).color}>
-                        {(STATUS_META[ev.status] || STATUS_META.draft).label}
-                      </Tag>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            ),
-          },
-        ]} />
+      {queue.reviewed.length > 0 && (
+        <>
+          <div className="section-label" style={{ marginTop: 28 }}>审核记录</div>
+          {queue.reviewed.map((item) => (
+            <ReviewedItemRow key={`${item.kind}_${item.id}`} item={item} />
+          ))}
+        </>
       )}
 
-      <Drawer
-        title={detail ? `审核 · ${detail.name}` : '审核详情'}
-        width={600}
-        open={!!openId}
-        onClose={() => {
-          setOpenId(null)
-          setDetail(null)
-        }}
+      <Modal
+        title={`驳回「${rejectTarget?.name || ''}」`}
+        open={!!rejectTarget}
+        onCancel={() => setRejectTarget(null)}
+        onOk={submitReject}
+        okText="确认驳回"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        destroyOnClose
       >
-        {detailLoading || !detail ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>
-            <Spin />
+        <Form form={form} layout="vertical" requiredMark="optional">
+          <Form.Item
+            name="reason"
+            label="驳回理由（必填）"
+            rules={[{ required: true, message: '请填写驳回理由' }]}
+          >
+            <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="例如：动作描述不清 / 触发条件不明确 / 与已有模板重复……" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+// 区分「用户规则」与「模板提案」的标签
+function KindTag({ kind }) {
+  return kind === 'rule'
+    ? <Tag color="blue">用户规则</Tag>
+    : <Tag color="purple">模板提案</Tag>
+}
+
+function PendingItemCard({ item, onApprove, onReject }) {
+  const triggerLabel = triggerLabelOf(item)
+  const statusMeta = item.kind === 'rule'
+    ? RULE_STATUS_META[item.status] || RULE_STATUS_META.pending_review
+    : TEMPLATE_STATUS_META[item.status] || TEMPLATE_STATUS_META.pending_review
+  return (
+    <div className="review-card">
+      <div className="rc-head">
+        <TriggerIcon trigger={item.trigger} size={42} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="rc-name">
+            {item.name}
+            <span style={{ marginLeft: 8 }}>
+              <KindTag kind={item.kind} />
+            </span>
           </div>
-        ) : (
-          <>
-            <Space align="center" size={12} style={{ marginBottom: 12 }}>
-              <SourceIcon source={detail.source} size={44} />
-              <div>
-                <h3 style={{ margin: 0 }}>{detail.name}</h3>
-                <div className="card-id">{detail.id}</div>
-              </div>
-            </Space>
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Tag color={SOURCE_COLORS[detail.source] || 'purple'}>{detail.source}</Tag>
-              {(detail.categoryLabels || []).map((c) => (
-                <Tag key={c}>{c}</Tag>
-              ))}
-              <Tag icon={<EditOutlined />}>{detail.author}</Tag>
-            </Space>
+          <div className="rc-desc">
+            触发器：{triggerLabel} · by {item.proposer} · 提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}
+          </div>
+        </div>
+        <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
+      </div>
+      <div className="rc-desc">{item.description}</div>
+      <div className="rc-action">
+        <b>🦞 龙虾会主动：</b>{item.action}
+      </div>
+      <div className="rc-foot">
+        <Space>
+          <Button icon={<CloseOutlined />} danger onClick={onReject}>驳回</Button>
+          <Button icon={<CheckOutlined />} type="primary" onClick={onApprove}>通过</Button>
+        </Space>
+      </div>
+    </div>
+  )
+}
 
-            <p style={{ color: '#4b5563' }}>{detail.description}</p>
-
-            <h3 className="section-label">事件说明</h3>
-            <Markdown>{detail.detail}</Markdown>
-
-            <h3 className="section-label">自动预检清单</h3>
-            <List
-              size="small"
-              bordered
-              dataSource={detail.checklist || []}
-              renderItem={(it) => <CheckRow item={it} />}
-            />
-
-            <h3 className="section-label">Payload Schema</h3>
-            <JsonBlock value={detail.schema} />
-            <h3 className="section-label">触发示例</h3>
-            {detail.examples?.map((ex, i) => (
-              <JsonBlock key={i} value={ex} />
-            ))}
-
-            <h3 className="section-label">审核意见 / 理由</h3>
-            <Input.TextArea
-              rows={3}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="通过可留空；驳回 / 要求修改必须填写理由，将反馈给开发者"
-            />
-
-            <Space style={{ marginTop: 16 }} wrap>
-              <Button
-                type="primary"
-                icon={<CheckOutlined />}
-                loading={busy}
-                onClick={() => decide('approve')}
-              >
-                通过并上架
-              </Button>
-              <Button danger loading={busy} onClick={() => decide('reject')}>
-                驳回
-              </Button>
-              <Button loading={busy} onClick={() => decide('request_changes')}>
-                要求修改
-              </Button>
-            </Space>
-          </>
-        )}
-      </Drawer>
+function ReviewedItemRow({ item }) {
+  const triggerLabel = triggerLabelOf(item)
+  const m = item.kind === 'rule'
+    ? (RULE_STATUS_META[item.status] || {})
+    : (TEMPLATE_STATUS_META[item.status] || {})
+  return (
+    <div className="review-card">
+      <div className="rc-head">
+        <TriggerIcon trigger={item.trigger} size={32} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="rc-name">
+            {item.name}
+            <span style={{ marginLeft: 8 }}>
+              <KindTag kind={item.kind} />
+            </span>
+          </div>
+          <div className="rc-desc">
+            {triggerLabel} · by {item.proposer}
+            {item.reviewedAt ? ` · 审核于 ${new Date(item.reviewedAt).toLocaleString('zh-CN')}` : ''}
+            {item.reviewer ? `（${item.reviewer}）` : ''}
+            {item.rejectReason ? ` · 理由：${item.rejectReason}` : ''}
+          </div>
+        </div>
+        <Tag color={m.color}>{m.label}</Tag>
+      </div>
     </div>
   )
 }
