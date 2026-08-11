@@ -1,13 +1,18 @@
 # 依赖
-frontend/node_modules/
 node_modules/
 backend/.venv/
 __pycache__/
 *.pyc
 
 # 构建产物（由 CI 重新构建，无需提交）
-frontend/dist/
 dist/
+
+# Vite 临时配置文件（构建时生成，构建后由 Vite 自行清理；
+# 在带 safe-delete 拦截的沙箱里清理 rm 被拦截会残留，故忽略）
+*.timestamp-*.mjs
+
+# 已废弃的旧 monolith（已从 git 移除；磁盘残留因 Windows 文件锁暂未删除）
+frontend/
 
 # 运行时数据
 data/
