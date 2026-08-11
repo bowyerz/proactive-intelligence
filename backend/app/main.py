@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("event-market")
 
 DEMO_USER = "demo_user"
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "dist"
 
 
 @asynccontextmanager

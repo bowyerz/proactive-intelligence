@@ -39,7 +39,7 @@
 ## 技术栈
 
 - 前端：React 18 + Ant Design 5 + react-router-dom 6（Vite 构建）
-- 分享版（GitHub Pages）：**纯静态**，数据由 `src/store.js` 在浏览器内模拟后端（localStorage 持久化），无需任何服务器
+- 分享版（GitHub Pages）：**纯静态**，数据由 `packages/shared/store.js` 在浏览器内模拟后端（localStorage 持久化），无需任何服务器
 - 本地全栈版（可选）：Python FastAPI 单服务 + SQLite（见文末「本地全栈开发」）
 - 零额外渲染依赖：Markdown 与 JSON 高亮均为自研轻量组件，避免离线构建失败
 
@@ -47,26 +47,31 @@
 
 ## 目录结构
 
+采用 **npm workspaces monorepo**：共享内核抽出为 `packages/shared`，三个角色各是独立子应用，入口是一个角色选择门户。
+
 ```
 event-market/
-├── .github/workflows/deploy.yml   # 推送到 main 即自动部署到 GitHub Pages
+├── package.json                  # npm workspaces：packages/shared + apps/{user,developer,admin}
+├── .github/workflows/deploy.yml  # 推送到 main 即自动构建三个子应用并部署到 GitHub Pages
+├── packages/shared/              # 共享内核（三个子应用复用）
+│   ├── store.js                  # 浏览器内「后端」：数据 + 逻辑 + localStorage
+│   ├── api.js                    # 请求封装（分享版指向 store）
+│   ├── brand.js                  # 品牌名（改一处全局换名）
+│   ├── theme.css
+│   └── components/TriggerIcon.jsx
+├── apps/                         # 三个独立子应用，各自一套 Vite 工程
+│   ├── user/                     # 我的任务（MarketPage）    -> /user/
+│   ├── developer/                # 模板策划（DeveloperPage） -> /developer/
+│   └── admin/                    # 所有任务审核（ReviewPage） -> /admin/
+├── public/index.html             # 入口门户：角色选择卡片（普通用户 / 开发者 / 管理员）
+├── scripts/copy-portal.mjs       # 把入口门户拷贝到构建产物 dist 根
 ├── backend/                       # 可选：本地全栈版后端（FastAPI + SQLite）
 │   ├── app/{main,models,db,seed}.py
 │   └── requirements.txt
-├── frontend/
-│   ├── public/.nojekyll           # 关闭 GitHub Pages 的 Jekyll 处理
-│   ├── src/
-│   │   ├── brand.js               # 品牌名（改一处全局换名）
-│   │   ├── api.js                 # 请求封装（分享版指向 store）
-│   │   ├── store.js               # 浏览器内「后端」：数据 + 逻辑 + localStorage
-│   │   ├── seedData.js            # 由 backend/app/seed.py 自动生成的 6 条预置数据
-│   │   ├── theme.css
-│   │   ├── App.jsx                # 路由 + 顶部角色导航
-│   │   ├── components/           # SourceIcon / Markdown / JsonBlock
-│   │   └── pages/                # MarketPage / DeveloperPage / ReviewPage
-│   └── vite.config.js            # base: './' 适配 Pages 子路径；HashRouter 免服务端配置
 └── data/event_market.db          # 仅本地全栈版使用
 ```
+
+> 共享内核经 Vite alias `@shared` 引入（如 `import { api } from '@shared/api.js'`）。每个子应用 `base: './'`、`outDir` 指向 `dist/<角色>`，构建产物与门户一起由 `dist/` 上传。
 
 ---
 
@@ -94,18 +99,18 @@ event-market/
 
 ### 方式二：本地直接预览静态产物
 
-不想建仓库也能看效果——构建后用任意静态服务器打开 `frontend/dist`：
+不想建仓库也能看效果——在仓库根目录构建三个子应用，用任意静态服务器打开 `dist`：
 
 ```bash
-cd event-market/frontend
-npm install
-npm run build
+cd event-market
+npm install            # 安装 workspaces 依赖（含三个子应用）
+npm run build          # 构建 user / developer / admin + 拷贝入口门户到 dist/
 # 用 Python 起一个静态服务器（或任意静态托管工具）
 python -m http.server 4173 --directory dist
-# 浏览器打开 http://127.0.0.1:4173
+# 浏览器打开 http://127.0.0.1:4173  （门户在根，子应用分别在 /user /developer /admin）
 ```
 
-> 注意：分享版用 `HashRouter`，链接形如 `…/#/developer`，**直接刷新 / 分享深链接都不会 404**。
+> 注意：各子应用用 `HashRouter`，链接形如 `…/#/...`，**直接刷新 / 分享深链接都不会 404**；`base: './'` 让资产用相对路径，本地与 Pages 子路径都能正确加载。
 
 ---
 
@@ -120,7 +125,7 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 # 浏览器打开 http://127.0.0.1:8000
 ```
 
-前后端分离热更新：再开一个终端 `cd frontend && npm install && npm run dev`（Vite 会把 `/api` 代理到 8000）。
+前后端分离热更新：再开一个终端 `cd apps/user && npm install && npm run dev`（Vite 会把 `/api` 代理到 8000）。
 
 ---
 
@@ -129,7 +134,7 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 > 目标：3 分钟走完「订阅 → 提交 → 审核上架」闭环，展示主动智能的价值。
 
 ### 0. 开场（我的任务）
-1. 顶部导航默认在 **我的任务**。看顶部统计卡（已启用 / 待审核 / 已驳回 / 执行次数）。
+1. 打开入口门户，点 **我是普通用户** 进入 **我的任务**（子路径 `/user/`）。页面顶部有「门户首页」「重置演示」。
 2. 列表里每条规则是一个开关：启用后龙虾会按「触发器 × 动作」主动执行；待审核的规则开关为灰、需管理员通过后才能启用。
 3. 点开任意一条规则看执行历史（时间戳 / 成功 / token 消耗 / 摘要），右上角 ⚡ 可模拟再触发一次。
 
@@ -139,15 +144,15 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 6. 点 **提交审核**：新建规则默认进入「待审核」，统计卡「待审核」+1；开关为灰、不能启用，直到管理员通过。
 
 ### 2. 开发者提交模板（打通供给端）
-7. 顶部切到 **模板策划**。表格列出「张开发」的模板，状态有「已上架 / 审核中」。
+7. 从门户进入 **模板策划**（子路径 `/developer/`）。表格列出「张开发」的模板，状态有「已上架 / 审核中」。
 8. 点 **提交新模板**，填写：名称「销售线索创建」、触发器（如 Webhook）、动作（一段让龙虾做的事）、简介。
 9. 提交后该模板进入**审核中**状态 —— 演示「提交即进审核队列」。
 
 ### 3. 管理员审核（所有任务，闭环收口）
-10. 顶部切到 **所有任务审核**。待审核队列同时含「用户规则」与「模板提案」，各自带标签，顶部统计分「用户规则待审 / 模板待审」。
+10. 从门户进入 **所有任务审核**（子路径 `/admin/`）。待审核队列同时含「用户规则」与「模板提案」，各自带标签，顶部统计分「用户规则待审 / 模板待审」。
 11. 点开一张 **用户规则**：看触发器（自定义规则显示你起的场景名）+ 龙虾会主动做的事；点 **通过** → 规则立即启用、从队列消失；点 **驳回**（必填理由）则不通过并写入审核记录。
 12. 点开 **模板提案**：通过即上架公共模板市场，驳回写理由反馈给开发者。
-13. （可选）回到 **我的任务** 从模板市场一键添加已上架模板，立即出现为一条规则。
+13. （可选）回到 **我的任务**（`/user/`）从模板市场一键添加已上架模板，立即出现为一条规则。
 
 ### 4. 复位
 - 顶部右侧 **重置演示** 一键恢复为初始数据（仅当前浏览器），方便反复演示。
@@ -158,4 +163,4 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 - 分享版所有状态（订阅 / 提交 / 审核）存于浏览器 localStorage，换设备 / 无痕模式不共享，符合 Demo 预期。
 - 无鉴权：角色靠前端导航切换，所有操作使用固定演示用户 `demo_user` / 开发者 `张开发`。
-- 想换品牌名：改 `frontend/src/brand.js` 一处即可（主名、标题、副标题、slogan 一次搞定）。
+- 想换品牌名：改 `packages/shared/brand.js` 一处即可（主名、标题、副标题、slogan 一次搞定）。
