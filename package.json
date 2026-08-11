@@ -1,0 +1,19 @@
+{
+  "name": "proactive-intelligence",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/user",
+    "apps/developer",
+    "apps/admin"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present && node scripts/copy-portal.mjs",
+    "build:user": "npm run build -w @proactive-intelligence/user",
+    "build:developer": "npm run build -w @proactive-intelligence/developer",
+    "build:admin": "npm run build -w @proactive-intelligence/admin",
+    "dev:user": "npm run dev -w @proactive-intelligence/user"
+  }
+}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>主动智能 · Proactive Intelligence</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(135deg, #fff7f3 0%, #fff 55%, #f3fbff 100%);
+        color: #1f2329;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .wrap { max-width: 960px; width: 100%; }
+      .hero { text-align: center; margin-bottom: 40px; }
+      .logo {
+        display: inline-flex; align-items: center; gap: 10px;
+        font-size: 30px; font-weight: 800; color: #fa541c;
+      }
+      .logo .dot { font-size: 34px; }
+      .tagline { margin-top: 12px; font-size: 15px; color: #6b7280; }
+      .slogan { margin-top: 6px; font-size: 13px; color: #fa8c5a; font-weight: 600; }
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+      @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+      .card {
+        background: #fff; border: 1px solid #ffe3d6; border-radius: 16px;
+        padding: 28px 22px; text-decoration: none; color: inherit;
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+      }
+      .card:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(250,84,28,.12); border-color: #ffb38f; }
+      .card .ico { font-size: 30px; }
+      .card h3 { font-size: 17px; font-weight: 700; }
+      .card p { font-size: 13px; color: #8a9099; line-height: 1.6; }
+      .card .go { margin-top: auto; font-size: 13px; color: #fa541c; font-weight: 600; }
+      .foot { text-align: center; margin-top: 36px; font-size: 12px; color: #b3b8c0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="hero">
+        <div class="logo"><span class="dot">🦞</span> 主动智能</div>
+        <div class="tagline">让个人龙虾先动起来的主动智能平台</div>
+        <div class="slogan">事件一响，主动出击</div>
+      </div>
+
+      <div class="cards">
+        <a class="card" href="user/">
+          <div class="ico">🛋️</div>
+          <h3>我是普通用户</h3>
+          <p>创建 / 启用 / 触发你自己的主动智能规则。选触发器、写动作、点开关，剩下的交给龙虾。</p>
+          <div class="go">进入我的任务 →</div>
+        </a>
+        <a class="card" href="developer/">
+          <div class="ico">🛠️</div>
+          <h3>我是开发者</h3>
+          <p>提交「触发器 × 默认动作」模板提案，通过审核后上架到公共模板市场，用户一键启用。</p>
+          <div class="go">进入模板策划 →</div>
+        </a>
+        <a class="card" href="admin/">
+          <div class="ico">✅</div>
+          <h3>我是管理员</h3>
+          <p>审核用户提交的规则与开发者提交的模板提案，一条通过 / 驳回即可完成治理。</p>
+          <div class="go">进入所有任务审核 →</div>
+        </a>
+      </div>
+
+      <div class="foot">主动智能 · Proactive Intelligence ｜ Demo · 无登录 · 数据存于浏览器本地</div>
+    </div>
+  </body>
+</html>
