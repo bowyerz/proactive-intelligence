@@ -3,8 +3,8 @@ import {
   App as AntApp, Button, Drawer, Form, Input, Select, Space, Table, Tag, Popconfirm, Empty,
 } from 'antd'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import { api, TEMPLATE_STATUS_META, TRIGGER_MAP } from '../api.js'
-import TriggerIcon from '../components/TriggerIcon.jsx'
+import { api, TEMPLATE_STATUS_META, TRIGGER_MAP } from '@shared/api.js'
+import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 const PROPOSER = '张开发'
 

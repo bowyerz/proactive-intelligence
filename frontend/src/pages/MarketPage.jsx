@@ -8,8 +8,8 @@ import {
   EditOutlined, DeleteOutlined, ArrowRightOutlined, ThunderboltOutlined, ReloadOutlined,
   CheckCircleTwoTone,
 } from '@ant-design/icons'
-import { api, TRIGGER_MAP } from '../api.js'
-import TriggerIcon from '../components/TriggerIcon.jsx'
+import { api, TRIGGER_MAP } from '@shared/api.js'
+import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 export default function MarketPage() {
   const { message: msgApi } = AntApp.useApp()

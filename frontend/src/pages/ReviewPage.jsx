@@ -3,8 +3,8 @@ import {
   App as AntApp, Button, Space, Tag, Modal, Input, Form, Empty, Statistic, Row, Col, Card,
 } from 'antd'
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
-import { api, RULE_STATUS_META, TEMPLATE_STATUS_META, TRIGGER_MAP } from '../api.js'
-import TriggerIcon from '../components/TriggerIcon.jsx'
+import { api, RULE_STATUS_META, TEMPLATE_STATUS_META, TRIGGER_MAP } from '@shared/api.js'
+import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 const REVIEWER = '平台管理员'
 
