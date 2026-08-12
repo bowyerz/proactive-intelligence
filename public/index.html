@@ -25,7 +25,7 @@
       .logo .dot { font-size: 34px; }
       .tagline { margin-top: 12px; font-size: 15px; color: #6b7280; }
       .slogan { margin-top: 6px; font-size: 13px; color: #fa8c5a; font-weight: 600; }
-      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+      .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 720px; margin: 0 auto; }
       @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
       .card {
         background: #fff; border: 1px solid #ffe3d6; border-radius: 16px;
@@ -56,17 +56,11 @@
           <p>创建 / 启用 / 触发你自己的主动智能规则。选触发器、写动作、点开关，剩下的交给龙虾。</p>
           <div class="go">进入我的任务 →</div>
         </a>
-        <a class="card" href="developer/">
+        <a class="card" href="manage/">
           <div class="ico">🛠️</div>
-          <h3>我是开发者</h3>
-          <p>提交「触发器 × 默认动作」模板提案，通过审核后上架到公共模板市场，用户一键启用。</p>
-          <div class="go">进入模板策划 →</div>
-        </a>
-        <a class="card" href="admin/">
-          <div class="ico">✅</div>
-          <h3>我是管理员</h3>
-          <p>审核用户提交的规则与开发者提交的模板提案，一条通过 / 驳回即可完成治理。</p>
-          <div class="go">进入所有任务审核 →</div>
+          <h3>我是开发 / 管理员</h3>
+          <p>开发者提交「触发器 × 默认动作」模板提案，管理员审核用户规则与模板 —— 一个后台搞定平台内部所有事。</p>
+          <div class="go">进入开发管理 →</div>
         </a>
       </div>
 

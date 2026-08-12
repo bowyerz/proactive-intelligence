@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { App as AntApp, Button, Space, Tag, Tooltip } from 'antd'
+import { App as AntApp, Button, Space, Tag, Tooltip, Tabs } from 'antd'
 import { ReloadOutlined, HomeOutlined } from '@ant-design/icons'
 import { api } from '@shared/api.js'
 import { BRAND } from '@shared/brand.js'
 import DeveloperPage from './pages/DeveloperPage.jsx'
+import ReviewPage from './pages/ReviewPage.jsx'
 
 export default function App() {
   const { message } = AntApp.useApp()
@@ -28,7 +29,7 @@ export default function App() {
         <div className="app-logo" onClick={() => { window.location.href = '../' }} style={{ cursor: 'pointer' }}>
           <span className="logo-dot">🦞</span>
           <span>{BRAND.name}</span>
-          <span style={{ opacity: 0.55, fontSize: 12, marginLeft: 8, fontWeight: 400 }}>模板策划</span>
+          <span style={{ opacity: 0.55, fontSize: 12, marginLeft: 8, fontWeight: 400 }}>开发管理</span>
         </div>
         <Space size={8} wrap>
           <Button size="small" icon={<HomeOutlined />} href="../">门户首页</Button>
@@ -42,7 +43,22 @@ export default function App() {
       </header>
 
       <main className="app-content">
-        <DeveloperPage />
+        <Tabs
+          defaultActiveKey="proposer"
+          size="large"
+          items={[
+            {
+              key: 'proposer',
+              label: '模板策划',
+              children: <DeveloperPage />,
+            },
+            {
+              key: 'review',
+              label: '审核治理',
+              children: <ReviewPage />,
+            },
+          ]}
+        />
       </main>
     </>
   )

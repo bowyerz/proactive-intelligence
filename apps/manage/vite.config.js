@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  // 相对基址：部署到 GitHub Pages 的 <仓库名>/admin/ 子路径时，资源也能正确加载
+  // 相对基址：部署到 GitHub Pages 的 <仓库名>/manage/ 子路径时，资源也能正确加载
   base: './',
   plugins: [react()],
   resolve: {
@@ -24,5 +24,5 @@ export default defineConfig({
     ],
     entries: ['src/main.jsx'],
   },
-  build: { outDir: '../../dist/admin', emptyOutDir: true },
+  build: { outDir: '../../dist/manage', emptyOutDir: true },
 })

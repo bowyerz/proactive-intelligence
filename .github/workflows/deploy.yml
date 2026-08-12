@@ -27,7 +27,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      # 构建三个子应用（user / developer / admin）+ 拷贝入口门户到 dist 根
+      # 构建两个子应用（user / manage）+ 拷贝入口门户到 dist 根
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
