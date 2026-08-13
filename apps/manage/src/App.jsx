@@ -49,12 +49,12 @@ export default function App() {
           items={[
             {
               key: 'proposer',
-              label: '模板策划',
+              label: '事件策划',
               children: <DeveloperPage />,
             },
             {
               key: 'review',
-              label: '审核治理',
+              label: '事件审核',
               children: <ReviewPage />,
             },
           ]}

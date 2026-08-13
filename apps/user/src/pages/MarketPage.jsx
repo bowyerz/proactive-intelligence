@@ -15,6 +15,7 @@ export default function MarketPage() {
   const { message: msgApi } = AntApp.useApp()
   const [subs, setSubs] = useState([])
   const [presetTasks, setPresetTasks] = useState([])
+  const [marketEvents, setMarketEvents] = useState([])
 
   const [marketDrawerOpen, setMarketDrawerOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -23,9 +24,14 @@ export default function MarketPage() {
 
   const loadAll = async () => {
     try {
-      const [s, p] = await Promise.all([api.listSubscriptions(), api.listPresetTasks()])
+      const [s, p, m] = await Promise.all([
+        api.listSubscriptions(),
+        api.listPresetTasks(),
+        api.listMarketEvents(),
+      ])
       setSubs(s.items)
       setPresetTasks(p.items)
+      setMarketEvents(m)
     } catch (e) {
       msgApi.error(e.message || '加载失败')
     }
@@ -85,8 +91,8 @@ export default function MarketPage() {
   // 当前已订阅某预置任务？
   const hasSub = (taskId) => subs.some((s) => s.taskId === taskId)
 
-  // 按事件分组的预置任务
-  const tasksByEvent = EVENTS.map((ev) => ({
+  // 按事件分组的预置任务（系统事件 + 已上架的开发者提案事件）
+  const tasksByEvent = marketEvents.map((ev) => ({
     event: ev,
     tasks: presetTasks.filter((t) => t.eventId === ev.id),
   }))
@@ -207,6 +213,7 @@ export default function MarketPage() {
           open={wizardOpen}
           onCancel={() => setWizardOpen(false)}
           onDone={onWizardDone}
+          marketEvents={marketEvents}
         />
       )}
 
@@ -248,7 +255,11 @@ function SubscriptionRow({ sub, onToggle, onOpen }) {
         onOpen()
       }}
     >
-      <TriggerIcon event={sub.eventId} size={42} />
+      <TriggerIcon
+        event={sub.eventId}
+        eventMeta={{ icon: sub.eventIcon, bg: sub.eventBg, color: sub.eventColor }}
+        size={42}
+      />
       <div className="rr-main">
         <div className="rr-head">
           {sub.name}
@@ -281,7 +292,7 @@ function EventGroup({ event, tasks, hasSub, onAdd, onCustomize, compact }) {
   return (
     <div className="event-section" style={compact ? { marginBottom: 18 } : {}}>
       <div className="event-section-head">
-        <TriggerIcon event={event.id} size={36} />
+        <TriggerIcon event={event.id} eventMeta={event} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="event-section-title">{event.name}</div>
           <div className="event-section-sub">
@@ -330,7 +341,7 @@ function PresetTaskCard({ task, installed, onAdd }) {
 // ====================================================================
 // 子组件：2 步创建向导 —— 选事件 → 选预置/自定义
 // ====================================================================
-function SubscriptionWizard({ open, onCancel, onDone }) {
+function SubscriptionWizard({ open, onCancel, onDone, marketEvents = [] }) {
   const { message: msgApi } = AntApp.useApp()
   const [step, setStep] = useState(0)
   const [eventId, setEventId] = useState(null)
@@ -370,7 +381,7 @@ function SubscriptionWizard({ open, onCancel, onDone }) {
           customName: customName.trim(),
           customAction: customAction.trim(),
         })
-        msgApi.success('已提交，等待管理员审核')
+        msgApi.success('已添加并立即启用')
       }
       onDone()
     } catch (e) {
@@ -402,13 +413,13 @@ function SubscriptionWizard({ open, onCancel, onDone }) {
         <div>
           <div style={{ fontWeight: 600, marginBottom: 14 }}>先选一个事件</div>
           <Row gutter={[14, 14]}>
-            {EVENTS.map((ev) => (
+            {marketEvents.map((ev) => (
               <Col key={ev.id} xs={24} sm={12}>
                 <div
                   className={`event-tile ${eventId === ev.id ? 'selected' : ''}`}
                   onClick={() => setEventId(ev.id)}
                 >
-                  <TriggerIcon event={ev.id} size={48} />
+                  <TriggerIcon event={ev.id} eventMeta={ev} size={48} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="et-name">{ev.name}</div>
                     <div className="et-desc">{ev.desc}</div>
@@ -441,7 +452,7 @@ function SubscriptionWizard({ open, onCancel, onDone }) {
           {mode === 'custom' && (
             <div>
               <div style={{ fontWeight: 600, marginBottom: 10 }}>
-                给「{EVENT_MAP[eventId]?.name}」写一个自定义任务
+                给「{(marketEvents.find((e) => e.id === eventId) || EVENT_MAP[eventId])?.name}」写一个自定义任务
               </div>
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>任务名称</div>
@@ -464,7 +475,7 @@ function SubscriptionWizard({ open, onCancel, onDone }) {
                   style={{ fontSize: 14 }}
                 />
                 <p style={{ color: 'var(--muted)', marginTop: 10, fontSize: 12.5 }}>
-                  自建任务需要管理员审核 — 通过后即可启用。
+                  自建任务提交后立即启用 — 仅对你自己生效。
                 </p>
               </div>
             </div>
@@ -485,7 +496,7 @@ function SubscriptionWizard({ open, onCancel, onDone }) {
           )}
           {step === 1 && (
             <Button type="primary" loading={submitting} disabled={!canNext()} onClick={submit}>
-              {mode === 'preset' ? '一键订阅' : '提交审核'}
+              {mode === 'preset' ? '一键订阅' : '立即启用'}
             </Button>
           )}
         </Space>
@@ -575,7 +586,11 @@ function SubscriptionDetailDrawer({ open, sub, onClose, onToggle, onDelete, onSi
       ) : (
         <>
           <div className="detail-hero">
-            <TriggerIcon event={sub.eventId} size={56} />
+            <TriggerIcon
+              event={sub.eventId}
+              eventMeta={{ icon: sub.eventIcon, bg: sub.eventBg, color: sub.eventColor }}
+              size={56}
+            />
             <div className="dh-text">
               <div className="dh-title">{sub.name}</div>
               <div className="dh-meta">

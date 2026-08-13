@@ -3,16 +3,14 @@ import {
   App as AntApp, Button, Space, Tag, Modal, Input, Form, Empty, Statistic, Row, Col, Card,
 } from 'antd'
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
-import { api, PRESET_STATUS_META, SUB_STATUS_META } from '@shared/api.js'
+import { api, PROPOSED_EVENT_STATUS_META } from '@shared/api.js'
 import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 const REVIEWER = '平台管理员'
 
 export default function ReviewPage() {
   const { message } = AntApp.useApp()
-  const [queue, setQueue] = useState({
-    pending: [], reviewed: [], pendingCount: 0, presetPending: 0, subPending: 0,
-  })
+  const [queue, setQueue] = useState({ pending: [], reviewed: [], pendingCount: 0 })
   const [loading, setLoading] = useState(true)
   const [rejectTarget, setRejectTarget] = useState(null)
   const [form] = Form.useForm()
@@ -33,10 +31,8 @@ export default function ReviewPage() {
 
   const approve = async (item) => {
     try {
-      const fn = item.kind === 'preset' ? api.reviewPresetTask : api.reviewSubscription
-      const verb = item.kind === 'preset' ? '上架事件市场' : '启用该订阅'
-      await fn(item.id, { decision: 'approve', reviewer: REVIEWER })
-      message.success(`已通过「${item.name}」— 立即${verb}`)
+      const r = await api.reviewProposedEvent(item.id, { decision: 'approve', reviewer: REVIEWER })
+      message.success(`已通过「${r.name}」— 整个事件包（含 ${r.taskCount} 个内置任务）已上架到事件市场`)
       load()
     } catch (e) {
       message.error(e.message || '操作失败')
@@ -51,8 +47,7 @@ export default function ReviewPage() {
   const submitReject = async () => {
     const v = await form.validateFields()
     try {
-      const fn = rejectTarget.kind === 'preset' ? api.reviewPresetTask : api.reviewSubscription
-      await fn(rejectTarget.id, { decision: 'reject', reviewer: REVIEWER, note: v.reason })
+      await api.reviewProposedEvent(rejectTarget.id, { decision: 'reject', reviewer: REVIEWER, note: v.reason })
       message.success('已驳回')
       setRejectTarget(null)
       load()
@@ -68,11 +63,10 @@ export default function ReviewPage() {
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} align="end">
         <div>
-          <h1 className="page-title">任务审核</h1>
+          <h1 className="page-title">事件审核</h1>
           <p className="page-sub">
-            待审核 <Tag color="processing">{queue.pendingCount}</Tag> 条 —
-            含 <b>预置任务提案</b> {queue.presetPending} 条、<b>用户自建订阅</b> {queue.subPending} 条。
-            通过后预置任务上架事件市场，自建订阅立即启用。
+            待审核 <Tag color="processing">{queue.pendingCount}</Tag> 个事件包 —
+            每个事件包 = 一个新触发事件 + 1~N 个内置任务。通过后整个包一起上架到「事件市场」，用户可订阅其中任意任务。
           </p>
         </div>
       </Space>
@@ -99,11 +93,11 @@ export default function ReviewPage() {
         待审核（{queue.pending.length}）
       </div>
       {loading ? null : queue.pending.length === 0 ? (
-        <Empty description="太棒了，没有需要审核的任务 ✨" style={{ padding: '30px 0' }} />
+        <Empty description="太棒了，没有需要审核的事件包 ✨" style={{ padding: '30px 0' }} />
       ) : (
         queue.pending.map((item) => (
-          <PendingItemCard
-            key={`${item.kind}_${item.id}`}
+          <PendingEventCard
+            key={item.id}
             item={item}
             onApprove={() => approve(item)}
             onReject={() => openReject(item)}
@@ -115,7 +109,7 @@ export default function ReviewPage() {
         <>
           <div className="section-label" style={{ marginTop: 28 }}>审核记录</div>
           {queue.reviewed.map((item) => (
-            <ReviewedItemRow key={`${item.kind}_${item.id}`} item={item} />
+            <ReviewedEventRow key={item.id} item={item} />
           ))}
         </>
       )}
@@ -138,7 +132,7 @@ export default function ReviewPage() {
           >
             <Input.TextArea
               autoSize={{ minRows: 3, maxRows: 6 }}
-              placeholder="例如：动作描述不清 / 与已有任务重复 / 触发场景不明确……"
+              placeholder="例如：触发场景不明确 / 与已有事件重复 / 内置任务描述不清……"
             />
           </Form.Item>
         </Form>
@@ -147,78 +141,71 @@ export default function ReviewPage() {
   )
 }
 
-function KindTag({ kind }) {
-  return kind === 'preset'
-    ? <Tag color="purple">预置任务提案</Tag>
-    : <Tag color="blue">用户自建订阅</Tag>
-}
-
-function PendingItemCard({ item, onApprove, onReject }) {
-  const statusMeta = item.kind === 'preset'
-    ? (PRESET_STATUS_META[item.status] || PRESET_STATUS_META.pending_review)
-    : (SUB_STATUS_META[item.status] || SUB_STATUS_META.pending_review)
-
-  // 订阅和预置任务的字段差异
-  const eventLabel = item.eventName || '未知事件'
-  const actionText = item.action || item.actionPreview || ''
-  const descText = item.description || (item.isCustom ? '用户自建任务' : '')
-
+function PendingEventCard({ item, onApprove, onReject }) {
+  const statusMeta = PROPOSED_EVENT_STATUS_META[item.status] || PROPOSED_EVENT_STATUS_META.pending_review
   return (
     <div className="review-card">
       <div className="rc-head">
-        <TriggerIcon event={item.eventId} size={42} />
+        <TriggerIcon eventMeta={item} size={48} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="rc-name">
             {item.name}
-            <span style={{ marginLeft: 8 }}>
-              <KindTag kind={item.kind} />
-            </span>
-            {item.isCustom && <Tag color="purple" style={{ marginLeft: 4 }}>自建</Tag>}
+            <Tag color={statusMeta.color} style={{ marginLeft: 8 }}>{statusMeta.label}</Tag>
           </div>
           <div className="rc-desc">
-            事件：{eventLabel} · by {item.proposer} · 提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}
+            来源：{item.source || '—'} · by {item.proposer} · 提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}
+          </div>
+          {item.desc && (
+            <div className="rc-desc" style={{ marginTop: 4 }}>{item.desc}</div>
+          )}
+          {item.checklist && (
+            <div className="rc-desc" style={{ color: 'var(--muted)', marginTop: 4 }}>
+              📋 {item.checklist}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="rc-section-title">📦 内置任务（{item.bundledTasks?.length || 0}）</div>
+      {(item.bundledTasks || []).map((t, i) => (
+        <div key={i} className="rc-task">
+          <div className="rc-task-name">{i + 1}. {t.name}</div>
+          {t.description && <div className="rc-task-desc">{t.description}</div>}
+          <div className="rc-action">
+            <b>🦞 龙虾会主动：</b>{t.actionPreview}
           </div>
         </div>
-        <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
-      </div>
-      {descText && <div className="rc-desc">{descText}</div>}
-      <div className="rc-action">
-        <b>🦞 龙虾会主动：</b>{actionText}
-      </div>
+      ))}
+
       <div className="rc-foot">
         <Space>
           <Button icon={<CloseOutlined />} danger onClick={onReject}>驳回</Button>
-          <Button icon={<CheckOutlined />} type="primary" onClick={onApprove}>通过</Button>
+          <Button icon={<CheckOutlined />} type="primary" onClick={onApprove}>通过 · 整个事件包上架</Button>
         </Space>
       </div>
     </div>
   )
 }
 
-function ReviewedItemRow({ item }) {
-  const m = item.kind === 'preset'
-    ? (PRESET_STATUS_META[item.status] || {})
-    : (SUB_STATUS_META[item.status] || {})
+function ReviewedEventRow({ item }) {
+  const m = PROPOSED_EVENT_STATUS_META[item.status] || {}
   return (
     <div className="review-card">
       <div className="rc-head">
-        <TriggerIcon event={item.eventId} size={32} />
+        <TriggerIcon eventMeta={item} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="rc-name">
             {item.name}
-            <span style={{ marginLeft: 8 }}>
-              <KindTag kind={item.kind} />
-            </span>
-            {item.isCustom && <Tag color="purple" style={{ marginLeft: 4 }}>自建</Tag>}
+            <Tag color={m.color} style={{ marginLeft: 8 }}>{m.label}</Tag>
+            <Tag color="blue" style={{ marginLeft: 4 }}>{item.taskCount} 个任务</Tag>
           </div>
           <div className="rc-desc">
-            事件：{item.eventName || item.eventId} · by {item.proposer}
+            来源：{item.source || '—'} · by {item.proposer}
             {item.reviewedAt ? ` · 审核于 ${new Date(item.reviewedAt).toLocaleString('zh-CN')}` : ''}
             {item.reviewer ? `（${item.reviewer}）` : ''}
             {item.rejectReason ? ` · 理由：${item.rejectReason}` : ''}
           </div>
         </div>
-        <Tag color={m.color}>{m.label}</Tag>
       </div>
     </div>
   )
