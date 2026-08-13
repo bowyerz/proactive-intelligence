@@ -31,7 +31,15 @@ jobs:
       # 解析依赖并补齐 lockfile，在 CI 环境中可正常安装与构建。
       - run: npm install --no-audit --no-fund
       # 构建两个子应用（user / manage）+ 拷贝入口门户到 dist 根
-      - run: npm run build
+      # 诊断：把构建错误作为 GitHub annotation 输出，便于无 token 时也能看到真实报错
+      - name: Build (with error capture)
+        run: |
+          set -o pipefail
+          npm run build > build.log 2>&1 || {
+            echo "::error::BUILD_FAILED"
+            echo "::error::$(tail -n 50 build.log)"
+            exit 1
+          }
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
