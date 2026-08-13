@@ -1,13 +1,13 @@
 // 前端 API 层。Demo 部署为纯静态站点（GitHub Pages），所有请求由浏览器端
 // store.js 处理（数据在 localStorage），不依赖后端服务。
-// 接口对应 v4 模型：system_events × proposed_events × preset_tasks × subscriptions × runs。
+// 接口对应 v5 模型：system_events × proposed_events × subscriptions（含用户自建 tasks[]）× runs。
+// （v5 起彻底删除 preset_tasks / bundledTasks：审核单位 = 事件，任务完全由用户自建）
 
 import * as store from './store.js'
 
 export const EVENTS = store.EVENTS
 export const EVENT_MAP = store.EVENT_MAP
 export const SUB_STATUS_META = store.SUB_STATUS_META
-export const PRESET_STATUS_META = store.PRESET_STATUS_META
 export const PROPOSED_EVENT_STATUS_META = store.PROPOSED_EVENT_STATUS_META
 
 async function wrap(fn) {
@@ -34,7 +34,7 @@ export const api = {
   // 事件市场：系统事件 + 已上架的开发者提案事件
   listMarketEvents: () => wrap(() => store.listMarketEvents()),
 
-  // 开发者提案的事件（管理后台的审核单位）
+  // 开发者提案的事件（管理后台的审核单位，**仅事件本身**）
   listProposedEvents: (params) => wrap(() => store.listProposedEvents(params || {})),
   getProposedEvent: (id) => wrap(() => {
     const pe = store.getProposedEvent(id)
@@ -44,15 +44,7 @@ export const api = {
   submitProposedEvent: (payload) => wrap(() => store.submitProposedEvent(payload)),
   proposerProposedEvents: (proposer) => wrap(() => store.proposerProposedEvents(proposer)),
 
-  // 预置任务（订阅用的成品）
-  listPresetTasks: (params) => wrap(() => store.listPresetTasks(params || {})),
-  getPresetTask: (id) => wrap(() => {
-    const t = store.getPresetTask(id)
-    if (!t) throw new Error('预置任务不存在')
-    return t
-  }),
-
-  // 订阅
+  // 订阅（v5：任务完全由用户自建，挂在 subscription.tasks[]）
   listSubscriptions: () => wrap(() => store.listSubscriptions()),
   getSubscription: (id) => wrap(() => {
     const s = store.getSubscription(id)
@@ -60,13 +52,14 @@ export const api = {
     return s
   }),
   createSubscription: (payload) => wrap(() => store.createSubscription(payload)),
+  updateSubscriptionTasks: (id, tasks) => wrap(() => store.updateSubscriptionTasks(id, tasks)),
   toggleSubscription: (id, enabled) => wrap(() => store.toggleSubscription(id, enabled)),
   deleteSubscription: (id) => wrap(() => store.deleteSubscription(id)),
 
   // 执行
   simulateRun: (id) => wrap(() => store.simulateRun(id)),
 
-  // 审核（v4：只审核「事件提案」）
+  // 审核（v5：只审核「事件提案」本身，不审核任何任务）
   reviewQueue: () => wrap(() => store.reviewQueue()),
   reviewProposedEvent: (id, body) => wrap(() => store.reviewProposedEvent(id, body)),
 

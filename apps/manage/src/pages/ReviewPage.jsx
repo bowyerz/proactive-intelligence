@@ -32,7 +32,7 @@ export default function ReviewPage() {
   const approve = async (item) => {
     try {
       const r = await api.reviewProposedEvent(item.id, { decision: 'approve', reviewer: REVIEWER })
-      message.success(`已通过「${r.name}」— 整个事件包（含 ${r.taskCount} 个内置任务）已上架到事件市场`)
+      message.success(`已通过「${r.name}」— 事件已上架到事件市场`)
       load()
     } catch (e) {
       message.error(e.message || '操作失败')
@@ -65,8 +65,9 @@ export default function ReviewPage() {
         <div>
           <h1 className="page-title">事件审核</h1>
           <p className="page-sub">
-            待审核 <Tag color="processing">{queue.pendingCount}</Tag> 个事件包 —
-            每个事件包 = 一个新触发事件 + 1~N 个内置任务。通过后整个包一起上架到「事件市场」，用户可订阅其中任意任务。
+            待审核 <Tag color="processing">{queue.pendingCount}</Tag> 个事件 —
+            只审核事件本身（来源 / 触发说明 / 清单 / 视觉），不带任何任务。
+            通过后该事件上架到「事件市场」，用户可订阅并在自己的界面创建任务。
           </p>
         </div>
       </Space>
@@ -93,7 +94,7 @@ export default function ReviewPage() {
         待审核（{queue.pending.length}）
       </div>
       {loading ? null : queue.pending.length === 0 ? (
-        <Empty description="太棒了，没有需要审核的事件包 ✨" style={{ padding: '30px 0' }} />
+        <Empty description="太棒了，没有需要审核的事件 ✨" style={{ padding: '30px 0' }} />
       ) : (
         queue.pending.map((item) => (
           <PendingEventCard
@@ -132,7 +133,7 @@ export default function ReviewPage() {
           >
             <Input.TextArea
               autoSize={{ minRows: 3, maxRows: 6 }}
-              placeholder="例如：触发场景不明确 / 与已有事件重复 / 内置任务描述不清……"
+              placeholder="例如：触发场景不明确 / 与已有事件重复 / 触发说明不清晰……"
             />
           </Form.Item>
         </Form>
@@ -160,27 +161,20 @@ function PendingEventCard({ item, onApprove, onReject }) {
           )}
           {item.checklist && (
             <div className="rc-desc" style={{ color: 'var(--muted)', marginTop: 4 }}>
-              📋 {item.checklist}
+              📋 使用清单：{item.checklist}
             </div>
           )}
         </div>
       </div>
 
-      <div className="rc-section-title">📦 内置任务（{item.bundledTasks?.length || 0}）</div>
-      {(item.bundledTasks || []).map((t, i) => (
-        <div key={i} className="rc-task">
-          <div className="rc-task-name">{i + 1}. {t.name}</div>
-          {t.description && <div className="rc-task-desc">{t.description}</div>}
-          <div className="rc-action">
-            <b>🦞 龙虾会主动：</b>{t.actionPreview}
-          </div>
-        </div>
-      ))}
+      <div className="rc-section-title" style={{ color: 'var(--muted)' }}>
+        💡 本次审核不涉及任何任务 — 任务完全由用户在订阅时自行创建。
+      </div>
 
       <div className="rc-foot">
         <Space>
           <Button icon={<CloseOutlined />} danger onClick={onReject}>驳回</Button>
-          <Button icon={<CheckOutlined />} type="primary" onClick={onApprove}>通过 · 整个事件包上架</Button>
+          <Button icon={<CheckOutlined />} type="primary" onClick={onApprove}>通过 · 事件上架</Button>
         </Space>
       </div>
     </div>
@@ -197,7 +191,6 @@ function ReviewedEventRow({ item }) {
           <div className="rc-name">
             {item.name}
             <Tag color={m.color} style={{ marginLeft: 8 }}>{m.label}</Tag>
-            <Tag color="blue" style={{ marginLeft: 4 }}>{item.taskCount} 个任务</Tag>
           </div>
           <div className="rc-desc">
             来源：{item.source || '—'} · by {item.proposer}
