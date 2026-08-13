@@ -26,7 +26,10 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      # 注意：本仓库的 package-lock.json 在部分环境下会缺少 resolved/integrity 字段，
+      # 严格模式的 `npm ci` 会直接失败（exit 1）。改用 `npm install`：它会自动从 registry
+      # 解析依赖并补齐 lockfile，在 CI 环境中可正常安装与构建。
+      - run: npm install --no-audit --no-fund
       # 构建两个子应用（user / manage）+ 拷贝入口门户到 dist 根
       - run: npm run build
       - uses: actions/configure-pages@v5
