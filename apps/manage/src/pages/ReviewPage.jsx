@@ -3,20 +3,16 @@ import {
   App as AntApp, Button, Space, Tag, Modal, Input, Form, Empty, Statistic, Row, Col, Card,
 } from 'antd'
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons'
-import { api, RULE_STATUS_META, TEMPLATE_STATUS_META, TRIGGER_MAP } from '@shared/api.js'
+import { api, PRESET_STATUS_META, SUB_STATUS_META } from '@shared/api.js'
 import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 const REVIEWER = '平台管理员'
 
-// 触发器展示名：自定义规则用 customName，其余用 TRIGGER_MAP
-function triggerLabelOf(item) {
-  if (item.trigger === 'custom' && item.customName) return item.customName
-  return TRIGGER_MAP[item.trigger]?.name || item.trigger
-}
-
 export default function ReviewPage() {
   const { message } = AntApp.useApp()
-  const [queue, setQueue] = useState({ pending: [], reviewed: [], pendingCount: 0, rulePending: 0, templatePending: 0 })
+  const [queue, setQueue] = useState({
+    pending: [], reviewed: [], pendingCount: 0, presetPending: 0, subPending: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [rejectTarget, setRejectTarget] = useState(null)
   const [form] = Form.useForm()
@@ -35,11 +31,10 @@ export default function ReviewPage() {
 
   useEffect(() => { load() }, [])
 
-  // 根据 kind 走不同的审核函数（规则走 reviewRule，模板走 reviewTemplate）
   const approve = async (item) => {
     try {
-      const fn = item.kind === 'rule' ? api.reviewRule : api.reviewTemplate
-      const verb = item.kind === 'rule' ? '启用' : '上架公共模板市场'
+      const fn = item.kind === 'preset' ? api.reviewPresetTask : api.reviewSubscription
+      const verb = item.kind === 'preset' ? '上架事件市场' : '启用该订阅'
       await fn(item.id, { decision: 'approve', reviewer: REVIEWER })
       message.success(`已通过「${item.name}」— 立即${verb}`)
       load()
@@ -56,7 +51,7 @@ export default function ReviewPage() {
   const submitReject = async () => {
     const v = await form.validateFields()
     try {
-      const fn = rejectTarget.kind === 'rule' ? api.reviewRule : api.reviewTemplate
+      const fn = rejectTarget.kind === 'preset' ? api.reviewPresetTask : api.reviewSubscription
       await fn(rejectTarget.id, { decision: 'reject', reviewer: REVIEWER, note: v.reason })
       message.success('已驳回')
       setRejectTarget(null)
@@ -73,11 +68,11 @@ export default function ReviewPage() {
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} align="end">
         <div>
-          <h1 className="page-title">所有任务审核</h1>
+          <h1 className="page-title">任务审核</h1>
           <p className="page-sub">
             待审核 <Tag color="processing">{queue.pendingCount}</Tag> 条 —
-            含 <b>用户规则</b> {queue.rulePending} 条、<b>模板提案</b> {queue.templatePending} 条。
-            通过后用户规则立即启用、模板上架公共市场。
+            含 <b>预置任务提案</b> {queue.presetPending} 条、<b>用户自建订阅</b> {queue.subPending} 条。
+            通过后预置任务上架事件市场，自建订阅立即启用。
           </p>
         </div>
       </Space>
@@ -141,7 +136,10 @@ export default function ReviewPage() {
             label="驳回理由（必填）"
             rules={[{ required: true, message: '请填写驳回理由' }]}
           >
-            <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="例如：动作描述不清 / 触发条件不明确 / 与已有模板重复……" />
+            <Input.TextArea
+              autoSize={{ minRows: 3, maxRows: 6 }}
+              placeholder="例如：动作描述不清 / 与已有任务重复 / 触发场景不明确……"
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -149,38 +147,43 @@ export default function ReviewPage() {
   )
 }
 
-// 区分「用户规则」与「模板提案」的标签
 function KindTag({ kind }) {
-  return kind === 'rule'
-    ? <Tag color="blue">用户规则</Tag>
-    : <Tag color="purple">模板提案</Tag>
+  return kind === 'preset'
+    ? <Tag color="purple">预置任务提案</Tag>
+    : <Tag color="blue">用户自建订阅</Tag>
 }
 
 function PendingItemCard({ item, onApprove, onReject }) {
-  const triggerLabel = triggerLabelOf(item)
-  const statusMeta = item.kind === 'rule'
-    ? RULE_STATUS_META[item.status] || RULE_STATUS_META.pending_review
-    : TEMPLATE_STATUS_META[item.status] || TEMPLATE_STATUS_META.pending_review
+  const statusMeta = item.kind === 'preset'
+    ? (PRESET_STATUS_META[item.status] || PRESET_STATUS_META.pending_review)
+    : (SUB_STATUS_META[item.status] || SUB_STATUS_META.pending_review)
+
+  // 订阅和预置任务的字段差异
+  const eventLabel = item.eventName || '未知事件'
+  const actionText = item.action || item.actionPreview || ''
+  const descText = item.description || (item.isCustom ? '用户自建任务' : '')
+
   return (
     <div className="review-card">
       <div className="rc-head">
-        <TriggerIcon trigger={item.trigger} size={42} />
+        <TriggerIcon event={item.eventId} size={42} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="rc-name">
             {item.name}
             <span style={{ marginLeft: 8 }}>
               <KindTag kind={item.kind} />
             </span>
+            {item.isCustom && <Tag color="purple" style={{ marginLeft: 4 }}>自建</Tag>}
           </div>
           <div className="rc-desc">
-            触发器：{triggerLabel} · by {item.proposer} · 提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}
+            事件：{eventLabel} · by {item.proposer} · 提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}
           </div>
         </div>
         <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
       </div>
-      <div className="rc-desc">{item.description}</div>
+      {descText && <div className="rc-desc">{descText}</div>}
       <div className="rc-action">
-        <b>🦞 龙虾会主动：</b>{item.action}
+        <b>🦞 龙虾会主动：</b>{actionText}
       </div>
       <div className="rc-foot">
         <Space>
@@ -193,23 +196,23 @@ function PendingItemCard({ item, onApprove, onReject }) {
 }
 
 function ReviewedItemRow({ item }) {
-  const triggerLabel = triggerLabelOf(item)
-  const m = item.kind === 'rule'
-    ? (RULE_STATUS_META[item.status] || {})
-    : (TEMPLATE_STATUS_META[item.status] || {})
+  const m = item.kind === 'preset'
+    ? (PRESET_STATUS_META[item.status] || {})
+    : (SUB_STATUS_META[item.status] || {})
   return (
     <div className="review-card">
       <div className="rc-head">
-        <TriggerIcon trigger={item.trigger} size={32} />
+        <TriggerIcon event={item.eventId} size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="rc-name">
             {item.name}
             <span style={{ marginLeft: 8 }}>
               <KindTag kind={item.kind} />
             </span>
+            {item.isCustom && <Tag color="purple" style={{ marginLeft: 4 }}>自建</Tag>}
           </div>
           <div className="rc-desc">
-            {triggerLabel} · by {item.proposer}
+            事件：{item.eventName || item.eventId} · by {item.proposer}
             {item.reviewedAt ? ` · 审核于 ${new Date(item.reviewedAt).toLocaleString('zh-CN')}` : ''}
             {item.reviewer ? `（${item.reviewer}）` : ''}
             {item.rejectReason ? ` · 理由：${item.rejectReason}` : ''}

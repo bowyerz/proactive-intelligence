@@ -1,31 +1,31 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   App as AntApp, Row, Col, Card, Tabs, Button, Switch, Drawer, Modal, Form, Input, Steps,
-  Space, Empty, Tag, Popconfirm, message,
+  Space, Empty, Tag, Popconfirm, Radio, Segmented, message, Tooltip,
 } from 'antd'
 import {
   PlusOutlined, AppstoreAddOutlined, BellOutlined, RocketOutlined,
-  EditOutlined, DeleteOutlined, ArrowRightOutlined, ThunderboltOutlined, ReloadOutlined,
-  CheckCircleTwoTone,
+  DeleteOutlined, ArrowRightOutlined, ThunderboltOutlined,
+  CheckCircleTwoTone, EditOutlined,
 } from '@ant-design/icons'
-import { api, TRIGGER_MAP } from '@shared/api.js'
+import { api, EVENTS, EVENT_MAP, SUB_STATUS_META } from '@shared/api.js'
 import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 export default function MarketPage() {
   const { message: msgApi } = AntApp.useApp()
-  const [rules, setRules] = useState([])
-  const [templates, setTemplates] = useState([])
+  const [subs, setSubs] = useState([])
+  const [presetTasks, setPresetTasks] = useState([])
 
-  const [tplDrawerOpen, setTplDrawerOpen] = useState(false)
+  const [marketDrawerOpen, setMarketDrawerOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [detailId, setDetailId] = useState(null)
   const [detail, setDetail] = useState(null)
 
   const loadAll = async () => {
     try {
-      const [r, t] = await Promise.all([api.listMyRules(), api.listTemplates()])
-      setRules(r.items)
-      setTemplates(t.items)
+      const [s, p] = await Promise.all([api.listSubscriptions(), api.listPresetTasks()])
+      setSubs(s.items)
+      setPresetTasks(p.items)
     } catch (e) {
       msgApi.error(e.message || '加载失败')
     }
@@ -33,58 +33,63 @@ export default function MarketPage() {
 
   useEffect(() => { loadAll() }, [])
 
-  // 打开详情时再拉
   useEffect(() => {
     if (!detailId) { setDetail(null); return }
-    api.getRule(detailId).then(setDetail).catch((e) => msgApi.error(e.message))
+    api.getSubscription(detailId).then(setDetail).catch((e) => msgApi.error(e.message))
   }, [detailId])
 
-  // ====== 开关启用 ======
-  const onToggle = async (rule, checked) => {
+  // 启用/停用
+  const onToggle = async (sub, checked) => {
     try {
-      await api.toggleRule(rule.id, checked)
-      msgApi.success(checked ? '已启用：龙虾开始主动监听' : '已停用')
+      await api.toggleSubscription(sub.id, checked)
+      msgApi.success(checked ? '已启用 — 事件一响，龙虾就开始主动执行' : '已停用')
       loadAll()
-      if (detailId === rule.id) {
-        setDetailId(null)
-        setTimeout(() => setDetailId(rule.id), 0)
+      if (detailId === sub.id) {
+        setDetailId(null); setTimeout(() => setDetailId(sub.id), 0)
       }
     } catch (e) {
       msgApi.error(e.message || '切换失败')
     }
   }
 
-  // ====== 删除规则 ======
-  const onDelete = async (rule) => {
+  // 删除
+  const onDelete = async (sub) => {
     try {
-      await api.deleteRule(rule.id)
+      await api.deleteSubscription(sub.id)
       msgApi.success('已删除')
       loadAll()
-      if (detailId === rule.id) setDetailId(null)
+      if (detailId === sub.id) setDetailId(null)
     } catch (e) {
       msgApi.error(e.message || '删除失败')
     }
   }
 
-  // ====== 从模板添加 ======
-  const onAddFromTemplate = async (tpl, asDraft) => {
+  // 从事件市场添加（单击预置任务）
+  const onAddPreset = async (task) => {
     try {
-      await api.addFromTemplate(tpl.id, { asDraft })
-      msgApi.success(`「${tpl.name}」已${asDraft ? '加入草稿' : '加入我的任务'}，可随时启用`)
-      setTplDrawerOpen(false)
+      const r = await api.createSubscription({ taskId: task.id, asDraft: false })
+      msgApi.success(`「${r.name}」已加入并启用`)
+      setMarketDrawerOpen(false)
       loadAll()
     } catch (e) {
       msgApi.error(e.message || '添加失败')
     }
   }
 
-  // ====== 新建规则（向导创建后回调） ======
+  // 新建向导完成
   const onWizardDone = () => {
     setWizardOpen(false)
     loadAll()
   }
 
-  const hasInstalled = (tplId) => rules.some((r) => r.isFromTemplate === tplId)
+  // 当前已订阅某预置任务？
+  const hasSub = (taskId) => subs.some((s) => s.taskId === taskId)
+
+  // 按事件分组的预置任务
+  const tasksByEvent = EVENTS.map((ev) => ({
+    event: ev,
+    tasks: presetTasks.filter((t) => t.eventId === ev.id),
+  }))
 
   return (
     <div>
@@ -92,11 +97,13 @@ export default function MarketPage() {
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} align="end">
         <div>
           <h1 className="page-title">事件订阅任务</h1>
-          <p className="page-sub">让个人龙虾按你的规则主动做事 — 选一个触发器，给一句动作指令，它就开始替你工作。</p>
+          <p className="page-sub">
+            选一个事件（例如「会议结束」），再订阅一个任务（例如「整理纪要」） — 事件一响，龙虾就替你执行。
+          </p>
         </div>
         <Space>
-          <Button icon={<AppstoreAddOutlined />} size="large" onClick={() => setTplDrawerOpen(true)}>
-            从模板添加
+          <Button icon={<AppstoreAddOutlined />} size="large" onClick={() => setMarketDrawerOpen(true)}>
+            从事件市场添加
           </Button>
           <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => setWizardOpen(true)}>
             新建事件订阅任务
@@ -107,41 +114,40 @@ export default function MarketPage() {
       {/* 品牌概念条 */}
       <div className="hero-concept">
         <div>
-          <div className="hc-title">📡 主动智能就这么简单</div>
+          <div className="hc-title">📡 先选事件，再订阅任务</div>
           <div className="hc-tag">事件一响，龙虾就动 — 不再轮询，由它主动执行</div>
         </div>
         <div className="hc-flow">
-          <span className="hc-node"><BellOutlined /> 触发器</span>
+          <span className="hc-node"><BellOutlined /> 事件</span>
           <span className="hc-arrow">→</span>
-          <span className="hc-node"><RocketOutlined /> 个人虾主动执行</span>
+          <span className="hc-node"><RocketOutlined /> 任务订阅</span>
           <span className="hc-arrow">→</span>
-          <span className="hc-node"><CheckCircleTwoTone twoToneColor="#52c41a" /> 任务完成</span>
+          <span className="hc-node"><CheckCircleTwoTone twoToneColor="#52c41a" /> 主动执行</span>
         </div>
       </div>
 
-      {/* Tabs：我的任务 / 模板市场 */}
+      {/* Tabs：我的任务 / 事件市场 */}
       <Tabs
         defaultActiveKey="mine"
         items={[
           {
             key: 'mine',
-            label: `我的任务（${rules.length}）`,
+            label: `我的任务（${subs.length}）`,
             children: (
               <div>
-                {rules.length === 0 ? (
+                {subs.length === 0 ? (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="还没有订阅任务 — 点右上角「从模板添加」一键开始，或点「新建」自己拼一个"
+                    description="还没有订阅任务 — 点右上角「从事件市场添加」一键开始，或「新建」自己拼一个"
                     style={{ padding: '40px 0' }}
                   />
                 ) : (
-                  rules.map((rule) => (
-                    <RuleRow
-                      key={rule.id}
-                      rule={rule}
-                      onToggle={(c) => onToggle(rule, c)}
-                      onOpen={() => setDetailId(rule.id)}
-                      onEdit={() => { setDetailId(rule.id) }}
+                  subs.map((sub) => (
+                    <SubscriptionRow
+                      key={sub.id}
+                      sub={sub}
+                      onToggle={(c) => onToggle(sub, c)}
+                      onOpen={() => setDetailId(sub.id)}
                     />
                   ))
                 )}
@@ -149,64 +155,65 @@ export default function MarketPage() {
             ),
           },
           {
-            key: 'tpl',
-            label: `模板市场（${templates.length}）`,
+            key: 'market',
+            label: `事件市场（${presetTasks.length}）`,
             children: (
               <div>
                 <p style={{ color: 'var(--muted)', marginTop: 0 }}>
-                  公共模板都是开发者提交的「触发器 × 默认动作」组合 — 一键添加到我的任务，可改名/可改动作、可立即启用或留作草稿。
+                  按事件浏览预置任务 — 一键订阅即可启用，也可以基于某个事件自建一个任务。
                 </p>
-                <Row gutter={[16, 16]}>
-                  {templates.map((tpl) => (
-                    <Col key={tpl.id} xs={24} sm={12} md={8} lg={8}>
-                      <TemplateCard
-                        tpl={tpl}
-                        installed={hasInstalled(tpl.id)}
-                        onAdd={(asDraft) => onAddFromTemplate(tpl, asDraft)}
-                      />
-                    </Col>
-                  ))}
-                </Row>
+                {tasksByEvent.map(({ event, tasks }) => (
+                  <EventGroup
+                    key={event.id}
+                    event={event}
+                    tasks={tasks}
+                    hasSub={hasSub}
+                    onAdd={onAddPreset}
+                    onCustomize={(ev) => { setWizardOpen(true); /* wizard 自己有 event 选择 */ }}
+                  />
+                ))}
               </div>
             ),
           },
         ]}
       />
 
-      {/* 模板抽屉（从模板添加） */}
+      {/* 事件市场抽屉（从事件市场添加）*/}
       <Drawer
-        title="模板市场"
-        open={tplDrawerOpen}
-        onClose={() => setTplDrawerOpen(false)}
-        width={760}
+        title="事件市场"
+        open={marketDrawerOpen}
+        onClose={() => setMarketDrawerOpen(false)}
+        width={780}
+        destroyOnClose
       >
-        <p style={{ color: 'var(--muted)' }}>点击模板即可一键加入 — 启用后会按规则立即监听。</p>
-        <Row gutter={[16, 16]}>
-          {templates.map((tpl) => (
-            <Col key={tpl.id} xs={24} sm={12}>
-              <TemplateCard
-                tpl={tpl}
-                installed={hasInstalled(tpl.id)}
-                onAdd={(asDraft) => onAddFromTemplate(tpl, asDraft)}
-              />
-            </Col>
-          ))}
-        </Row>
+        <p style={{ color: 'var(--muted)' }}>
+          按事件浏览，点击任务即可一键订阅启用。已订阅的任务会显示「已添加」。
+        </p>
+        {tasksByEvent.map(({ event, tasks }) => (
+          <EventGroup
+            key={event.id}
+            event={event}
+            tasks={tasks}
+            hasSub={hasSub}
+            onAdd={onAddPreset}
+            compact
+          />
+        ))}
       </Drawer>
 
       {/* 新建向导 */}
       {wizardOpen && (
-        <RuleWizard
+        <SubscriptionWizard
           open={wizardOpen}
           onCancel={() => setWizardOpen(false)}
           onDone={onWizardDone}
         />
       )}
 
-      {/* 规则详情抽屉（执行历史） */}
-      <RuleDetailDrawer
+      {/* 详情抽屉（执行历史）*/}
+      <SubscriptionDetailDrawer
         open={!!detailId}
-        rule={detail}
+        sub={detail}
         onClose={() => setDetailId(null)}
         onToggle={(v) => detail && onToggle(detail, v)}
         onDelete={() => detail && onDelete(detail)}
@@ -214,8 +221,8 @@ export default function MarketPage() {
           if (!detail) return
           api.simulateRun(detail.id)
             .then(() => {
-              msgApi.success('已触发一次主动执行')
-              api.getRule(detail.id).then(setDetail)
+              msgApi.success('已主动触发一次')
+              api.getSubscription(detail.id).then(setDetail)
               loadAll()
             })
             .catch((e) => msgApi.error(e.message))
@@ -226,41 +233,41 @@ export default function MarketPage() {
 }
 
 // ====================================================================
-// 子组件：一行规则（截图 1）
+// 子组件：订阅行（我的任务列表）
 // ====================================================================
-function RuleRow({ rule, onToggle, onOpen, onEdit }) {
-  const trigger = TRIGGER_MAP[rule.trigger] || {}
-  const subText = rule.trigger === 'custom'
-    ? `${rule.customName || '自定义'}时触发`
-    : `${trigger.name || rule.trigger}时触发`
-  const isPending = rule.status === 'pending_review'
-  const isRejected = rule.status === 'rejected'
+function SubscriptionRow({ sub, onToggle, onOpen }) {
+  const isPending = sub.status === 'pending_review'
+  const isRejected = sub.status === 'rejected'
   const toggleDisabled = isPending || isRejected
+  const isCustom = sub.isCustom
   return (
     <div
-      className={`rule-row ${rule.enabled && !toggleDisabled ? '' : 'disabled'}`}
+      className={`rule-row ${sub.enabled && !toggleDisabled ? '' : 'disabled'}`}
       onClick={(e) => {
         if (e.target.closest('.ant-switch, .ant-btn')) return
         onOpen()
       }}
     >
-      <TriggerIcon trigger={rule.trigger} size={42} />
+      <TriggerIcon event={sub.eventId} size={42} />
       <div className="rr-main">
-        <div className="rr-head">{rule.name}</div>
+        <div className="rr-head">
+          {sub.name}
+          {isCustom && <Tag color="purple" style={{ marginLeft: 4 }}>自建</Tag>}
+        </div>
         <div className="rr-sub">
-          {subText}
-          {isRejected && rule.rejectReason && (
+          {sub.eventName}时触发 · {sub.action}
+          {isRejected && sub.rejectReason && (
             <span style={{ color: '#cf1322', marginLeft: 8 }}>
-              · 驳回理由：{rule.rejectReason}
+              · 驳回理由：{sub.rejectReason}
             </span>
           )}
         </div>
       </div>
       {isPending && <Tag color="processing">待审核</Tag>}
       {isRejected && <Tag color="error">已驳回</Tag>}
-      {!isPending && !isRejected && !rule.enabled && <Tag>草稿</Tag>}
+      {!isPending && !isRejected && !sub.enabled && <Tag>草稿</Tag>}
       <span onClick={(e) => e.stopPropagation()}>
-        <Switch checked={!!rule.enabled} disabled={toggleDisabled} onChange={onToggle} />
+        <Switch checked={!!sub.enabled} disabled={toggleDisabled} onChange={onToggle} />
       </span>
       <span className="rr-arrow"><ArrowRightOutlined /></span>
     </div>
@@ -268,30 +275,52 @@ function RuleRow({ rule, onToggle, onOpen, onEdit }) {
 }
 
 // ====================================================================
-// 子组件：模板卡
+// 子组件：事件分组（事件市场）
 // ====================================================================
-function TemplateCard({ tpl, installed, onAdd }) {
+function EventGroup({ event, tasks, hasSub, onAdd, onCustomize, compact }) {
   return (
-    <div className="tpl-card">
-      <div className="tc-head">
-        <TriggerIcon trigger={tpl.trigger} size={36} />
+    <div className="event-section" style={compact ? { marginBottom: 18 } : {}}>
+      <div className="event-section-head">
+        <TriggerIcon event={event.id} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="tc-name">{tpl.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {tpl.triggerInfo?.name} · 已 {tpl.installs} 人启用
+          <div className="event-section-title">{event.name}</div>
+          <div className="event-section-sub">
+            <Tag color="default" style={{ marginRight: 6 }}>{event.source}</Tag>
+            {event.desc}
           </div>
         </div>
+        <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>
+          {tasks.length} 个预置任务
+        </div>
       </div>
-      <div className="tc-desc">{tpl.description}</div>
+      <Row gutter={[12, 12]}>
+        {tasks.map((t) => (
+          <Col key={t.id} xs={24} sm={12} md={compact ? 24 : 8}>
+            <PresetTaskCard task={t} installed={hasSub(t.id)} onAdd={() => onAdd(t)} />
+          </Col>
+        ))}
+      </Row>
+    </div>
+  )
+}
+
+// ====================================================================
+// 子组件：预置任务卡
+// ====================================================================
+function PresetTaskCard({ task, installed, onAdd }) {
+  return (
+    <div className="task-card">
+      <div className="tc-name">{task.name}</div>
+      <div className="tc-desc">{task.description}</div>
+      <div className="tc-action">
+        <b>🦞 龙虾会主动：</b>{task.actionPreview}
+      </div>
       <div className="tc-foot">
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>by {tpl.proposer}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>by {task.proposer}{task.installs > 0 ? ` · ${task.installs} 人订阅` : ''}</span>
         {installed ? (
           <Tag color="success">已添加</Tag>
         ) : (
-          <Space size={4}>
-            <Button size="small" onClick={() => onAdd(true)}>存草稿</Button>
-            <Button size="small" type="primary" onClick={() => onAdd(false)}>立即启用</Button>
-          </Space>
+          <Button size="small" type="primary" onClick={onAdd}>一键订阅</Button>
         )}
       </div>
     </div>
@@ -299,66 +328,50 @@ function TemplateCard({ tpl, installed, onAdd }) {
 }
 
 // ====================================================================
-// 子组件：3 步创建向导（截图 2-4）
+// 子组件：2 步创建向导 —— 选事件 → 选预置/自定义
 // ====================================================================
-const TRIGGER_ICONS_FOR_WIZARD = {
-  chat: { bg: '#e8f0fe', color: '#2563eb' },
-  email: { bg: '#e8f6ed', color: '#18a058' },
-  minutes: { bg: '#fff7e6', color: '#d48806' },
-  approval: { bg: '#fff0f6', color: '#c41d7f' },
-  webhook: { bg: '#f3ecfd', color: '#7c3aed' },
-  custom: { bg: '#e6fffb', color: '#08979c' },
-}
-
-import {
-  MailOutlined, MessageOutlined, FileTextOutlined, AuditOutlined, ApiOutlined, SettingOutlined,
-} from '@ant-design/icons'
-
-const TRIGGER_ICON_MAP = {
-  chat: MessageOutlined,
-  email: MailOutlined,
-  minutes: FileTextOutlined,
-  approval: AuditOutlined,
-  webhook: ApiOutlined,
-  custom: SettingOutlined,
-}
-
-function RuleWizard({ open, onCancel, onDone }) {
+function SubscriptionWizard({ open, onCancel, onDone }) {
   const { message: msgApi } = AntApp.useApp()
   const [step, setStep] = useState(0)
-  const [trigger, setTrigger] = useState(null)
+  const [eventId, setEventId] = useState(null)
+  const [mode, setMode] = useState('preset') // 'preset' | 'custom'
+  const [presetTaskId, setPresetTaskId] = useState(null)
   const [customName, setCustomName] = useState('')
-  const [action, setAction] = useState('')
-  const [name, setName] = useState('')
+  const [customAction, setCustomAction] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setStep(0); setTrigger(null); setCustomName(''); setAction(''); setName('')
+      setStep(0); setEventId(null); setMode('preset'); setPresetTaskId(null)
+      setCustomName(''); setCustomAction('')
     }
   }, [open])
 
+  const tasksForEvent = eventId ? [] /* 拉取 */ : []
+
   const canNext = () => {
-    if (step === 0) {
-      if (!trigger) return false
-      if (trigger === 'custom' && !customName.trim()) return false
-      return true
+    if (step === 0) return !!eventId
+    if (step === 1) {
+      if (mode === 'preset') return !!presetTaskId
+      return customName.trim().length >= 2 && customAction.trim().length >= 4
     }
-    if (step === 1) return action.trim().length >= 4
-    if (step === 2) return name.trim().length >= 2
     return false
   }
 
   const submit = async () => {
     setSubmitting(true)
     try {
-      await api.createRule({
-        name: name.trim(),
-        trigger,
-        customName: trigger === 'custom' ? customName.trim() : null,
-        action: action.trim(),
-      })
-      msgApi.success('已提交，等待管理员审核')
+      if (mode === 'preset') {
+        await api.createSubscription({ taskId: presetTaskId, asDraft: false })
+        msgApi.success('已订阅并启用')
+      } else {
+        await api.createSubscription({
+          eventId,
+          customName: customName.trim(),
+          customAction: customAction.trim(),
+        })
+        msgApi.success('已提交，等待管理员审核')
+      }
       onDone()
     } catch (e) {
       msgApi.error(e.message || '保存失败')
@@ -374,101 +387,88 @@ function RuleWizard({ open, onCancel, onDone }) {
       footer={null}
       width={680}
       destroyOnClose
-      title="新建规则"
+      title="新建事件订阅任务"
     >
       <Steps
         current={step}
         style={{ marginBottom: 24 }}
         items={[
-          { title: '选择触发' },
-          { title: '设置操作' },
-          { title: '完成保存' },
+          { title: '选择事件' },
+          { title: '选择任务' },
         ]}
       />
 
       {step === 0 && (
         <div>
-          <div style={{ fontWeight: 600, marginBottom: 14 }}>选择触发器类型</div>
-          <div className="trigger-grid">
-            {Object.values(TRIGGER_MAP).map((t) => {
-              const TriggerIco = TRIGGER_ICON_MAP[t.id]
-              const style = TRIGGER_ICONS_FOR_WIZARD[t.id]
-              return (
+          <div style={{ fontWeight: 600, marginBottom: 14 }}>先选一个事件</div>
+          <Row gutter={[14, 14]}>
+            {EVENTS.map((ev) => (
+              <Col key={ev.id} xs={24} sm={12}>
                 <div
-                  key={t.id}
-                  className={`trigger-tile ${trigger === t.id ? 'selected' : ''}`}
-                  onClick={() => setTrigger(t.id)}
+                  className={`event-tile ${eventId === ev.id ? 'selected' : ''}`}
+                  onClick={() => setEventId(ev.id)}
                 >
-                  <div className="tt-icon" style={trigger === t.id ? {} : style}>
-                    <TriggerIco />
+                  <TriggerIcon event={ev.id} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="et-name">{ev.name}</div>
+                    <div className="et-desc">{ev.desc}</div>
+                    <div className="et-check">{ev.checklist}</div>
                   </div>
-                  <div className="tt-name">{t.name}</div>
-                  <div className="tt-desc">{t.desc}</div>
                 </div>
-              )
-            })}
-          </div>
+              </Col>
+            ))}
+          </Row>
+        </div>
+      )}
 
-          {trigger === 'custom' && (
-            <div style={{ marginTop: 18 }}>
-              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
-                给你的自定义触发器起个名字
+      {step === 1 && eventId && (
+        <div>
+          <Segmented
+            value={mode}
+            onChange={setMode}
+            options={[
+              { label: '从预置任务选', value: 'preset' },
+              { label: '自己写一个', value: 'custom' },
+            ]}
+            block
+            style={{ marginBottom: 18 }}
+          />
+
+          {mode === 'preset' && (
+            <PresetPicker eventId={eventId} value={presetTaskId} onChange={setPresetTaskId} />
+          )}
+
+          {mode === 'custom' && (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 10 }}>
+                给「{EVENT_MAP[eventId]?.name}」写一个自定义任务
               </div>
-              <Input
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="如：每日 8 点 / GitLab MR 创建 / 工作日历变更"
-                size="large"
-              />
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>任务名称</div>
+                <Input
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="如：把纪要同步给直属 leader"
+                  size="large"
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
+                  让龙虾主动做什么
+                </div>
+                <Input.TextArea
+                  value={customAction}
+                  onChange={(e) => setCustomAction(e.target.value)}
+                  placeholder="例：会后把会议纪要整理成不超过 8 行的要点，发私聊给直属 leader"
+                  autoSize={{ minRows: 5, maxRows: 8 }}
+                  style={{ fontSize: 14 }}
+                />
+                <p style={{ color: 'var(--muted)', marginTop: 10, fontSize: 12.5 }}>
+                  自建任务需要管理员审核 — 通过后即可启用。
+                </p>
+              </div>
             </div>
           )}
-        </div>
-      )}
-
-      {step === 1 && (
-        <div>
-          <div style={{ fontWeight: 600, marginBottom: 14 }}>设置执行内容</div>
-          <Input.TextArea
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            placeholder="请输入要让龙虾执行的内容，如：自动总结、自动摘要并同步到对话框……"
-            autoSize={{ minRows: 6, maxRows: 10 }}
-            style={{ fontSize: 14 }}
-          />
-          <p style={{ color: 'var(--muted)', marginTop: 10, fontSize: 12.5 }}>
-            例：「自动按紧急程度分级」「摘要成 50 字内」「自动发到群对话」「再 @ 提醒到人」…
-          </p>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div>
-          <div className="preview-card">
-            <div className="pc-head">
-              <TriggerIcon trigger={trigger} size={42} />
-              <div style={{ flex: 1 }}>
-                <div className="pc-name">{name || '未命名规则'}</div>
-                <div className="pc-desc">
-                  {trigger === 'custom'
-                    ? `${customName || '自定义'}时触发`
-                    : TRIGGER_MAP[trigger]?.desc}
-                </div>
-              </div>
-            </div>
-            <div className="pc-action">
-              <b>动作：</b>{action}
-            </div>
-          </div>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>规则名称</div>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="请输入规则名称（也可保持自动建议名）"
-            size="large"
-          />
-          <p style={{ color: 'var(--muted)', marginTop: 10, fontSize: 12.5 }}>
-            提交后将进入 <b>所有任务审核</b>，管理员通过后即可被龙虾主动执行。
-          </p>
         </div>
       )}
 
@@ -478,14 +478,14 @@ function RuleWizard({ open, onCancel, onDone }) {
           {step === 0 && <Button onClick={onCancel}>取消</Button>}
         </Space>
         <Space>
-          {step < 2 && (
+          {step < 1 && (
             <Button type="primary" disabled={!canNext()} onClick={() => setStep((s) => s + 1)}>
               下一步
             </Button>
           )}
-          {step === 2 && (
-            <Button type="primary" loading={submitting} onClick={submit}>
-              提交审核
+          {step === 1 && (
+            <Button type="primary" loading={submitting} disabled={!canNext()} onClick={submit}>
+              {mode === 'preset' ? '一键订阅' : '提交审核'}
             </Button>
           )}
         </Space>
@@ -494,14 +494,43 @@ function RuleWizard({ open, onCancel, onDone }) {
   )
 }
 
+// 预置任务选择器（拉取当前事件下所有已上架任务）
+function PresetPicker({ eventId, value, onChange }) {
+  const [tasks, setTasks] = useState([])
+  useEffect(() => {
+    api.listPresetTasks({ eventId }).then((r) => setTasks(r.items)).catch(() => {})
+  }, [eventId])
+  if (tasks.length === 0) {
+    return <Empty description="该事件还没有预置任务，可选「自己写一个」" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '20px 0' }} />
+  }
+  return (
+    <Radio.Group
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: '100%' }}
+    >
+      <Space direction="vertical" style={{ width: '100%' }} size={10}>
+        {tasks.map((t) => (
+          <Radio key={t.id} value={t.id} style={{ width: '100%' }}>
+            <div style={{ marginLeft: 4 }}>
+              <div style={{ fontWeight: 600 }}>{t.name}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{t.actionPreview}</div>
+            </div>
+          </Radio>
+        ))}
+      </Space>
+    </Radio.Group>
+  )
+}
+
 // ====================================================================
-// 子组件：规则详情 / 执行历史抽屉（截图 5）
+// 子组件：详情 / 执行历史抽屉
 // ====================================================================
-function RuleDetailDrawer({ open, rule, onClose, onToggle, onDelete, onSimulate }) {
-  const statusBadge = rule && rule.statusMeta ? (
-    <Tag color={rule.statusMeta.color}>{rule.statusMeta.label}</Tag>
+function SubscriptionDetailDrawer({ open, sub, onClose, onToggle, onDelete, onSimulate }) {
+  const statusBadge = sub && sub.statusMeta ? (
+    <Tag color={sub.statusMeta.color}>{sub.statusMeta.label}</Tag>
   ) : null
-  const isActive = rule?.status === 'active'
+  const isActive = sub?.status === 'active'
   return (
     <Drawer
       open={open}
@@ -510,25 +539,25 @@ function RuleDetailDrawer({ open, rule, onClose, onToggle, onDelete, onSimulate 
       destroyOnClose
       title={
         <Space>
-          <span style={{ fontWeight: 700 }}>{rule?.name || '规则详情'}</span>
+          <span style={{ fontWeight: 700 }}>{sub?.name || '订阅详情'}</span>
           {statusBadge}
         </Space>
       }
       extra={
-        rule && (
+        sub && (
           <Space>
-            {isActive && rule.enabled && (
+            {isActive && sub.enabled && (
               <Button icon={<ThunderboltOutlined />} onClick={onSimulate}>主动触发一次</Button>
             )}
-            <Switch checked={!!rule.enabled} disabled={!isActive} onChange={onToggle} />
+            <Switch checked={!!sub.enabled} disabled={!isActive} onChange={onToggle} />
           </Space>
         )
       }
       footer={
-        rule && (
+        sub && (
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
             <Popconfirm
-              title="确认删除此规则？"
+              title="确认删除此订阅？"
               okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true }}
@@ -541,38 +570,39 @@ function RuleDetailDrawer({ open, rule, onClose, onToggle, onDelete, onSimulate 
         )
       }
     >
-      {!rule ? (
+      {!sub ? (
         <Empty />
       ) : (
         <>
           <div className="detail-hero">
-            <TriggerIcon trigger={rule.trigger} size={56} />
+            <TriggerIcon event={sub.eventId} size={56} />
             <div className="dh-text">
-              <div className="dh-title">{rule.name}</div>
+              <div className="dh-title">{sub.name}</div>
               <div className="dh-meta">
-                触发器：{rule.trigger === 'custom' ? (rule.customName || '自定义') : rule.triggerName}
-                {' · '}创建于 {new Date(rule.createdAt).toLocaleString('zh-CN')}
-                {' · '}by {rule.proposer}
+                事件：{sub.eventName}
+                {sub.isCustom && ' · 自建'}
+                {' · '}创建于 {new Date(sub.createdAt).toLocaleString('zh-CN')}
+                {' · '}by {sub.proposer}
               </div>
-              {rule.status === 'rejected' && rule.rejectReason && (
+              {sub.status === 'rejected' && sub.rejectReason && (
                 <div className="dh-action" style={{ background: '#fff1f0', borderLeftColor: '#cf1322' }}>
-                  <b style={{ color: '#cf1322' }}>驳回理由：</b> {rule.rejectReason}
+                  <b style={{ color: '#cf1322' }}>驳回理由：</b> {sub.rejectReason}
                 </div>
               )}
               <div className="dh-action">
-                <b>🦞 龙虾会主动：</b> {rule.action}
+                <b>🦞 龙虾会主动：</b> {sub.action}
               </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div className="section-label" style={{ margin: 0 }}>执行记录</div>
-            {rule.runs?.length > 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>共 {rule.runs.length} 次</span>}
+            {sub.runs?.length > 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>共 {sub.runs.length} 次</span>}
           </div>
           <div className="detail-side" style={{ padding: '6px 18px' }}>
-            {!rule.runs || rule.runs.length === 0 ? (
-              <Empty description={isActive ? '还没有执行记录 — 点右上角『主动触发一次』模拟一次' : '审核通过启用后才会有执行记录'} style={{ padding: '20px 0' }} />
-            ) : rule.runs.map((run) => (
+            {!sub.runs || sub.runs.length === 0 ? (
+              <Empty description={isActive ? '还没有执行记录 — 点右上角「主动触发一次」模拟一次' : '审核通过启用后才会有执行记录'} style={{ padding: '20px 0' }} />
+            ) : sub.runs.map((run) => (
               <RunRow key={run.id} run={run} />
             ))}
           </div>

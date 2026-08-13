@@ -1,23 +1,17 @@
 import {
-  MailOutlined,
-  MessageOutlined,
-  FileTextOutlined,
-  AuditOutlined,
-  ApiOutlined,
-  SettingOutlined,
+  ClockCircleOutlined,
+  FlagOutlined,
 } from '@ant-design/icons'
 
-const MAP = {
-  email: { Icon: MailOutlined, bg: '#e8f6ed', color: '#18a058' },
-  chat: { Icon: MessageOutlined, bg: '#e8f0fe', color: '#2563eb' },
-  minutes: { Icon: FileTextOutlined, bg: '#fff7e6', color: '#d48806' },
-  approval: { Icon: AuditOutlined, bg: '#fff0f6', color: '#c41d7f' },
-  webhook: { Icon: ApiOutlined, bg: '#f3ecfd', color: '#7c3aed' },
-  custom: { Icon: SettingOutlined, bg: '#e6fffb', color: '#08979c' },
+// v3 模型下，触发器改成「事件」（更精简：2 个固定事件）
+const EVENT_ICON_MAP = {
+  'meeting-start-30min': { Icon: ClockCircleOutlined, bg: '#fff7e6', color: '#d48806' },
+  'meeting-end': { Icon: FlagOutlined, bg: '#e6fffb', color: '#08979c' },
 }
 
-export default function TriggerIcon({ trigger, size = 40 }) {
-  const { Icon, bg, color } = MAP[trigger] || MAP.webhook
+export default function TriggerIcon({ trigger, event, size = 40 }) {
+  const key = event || trigger
+  const { Icon, bg, color } = EVENT_ICON_MAP[key] || EVENT_ICON_MAP['meeting-start-30min']
   return (
     <span
       className="source-icon"
@@ -34,4 +28,7 @@ export default function TriggerIcon({ trigger, size = 40 }) {
   )
 }
 
-export const TRIGGER_COLOR = MAP
+export const EVENT_ICON = EVENT_ICON_MAP
+
+// 兼容旧字段名（其它文件可能仍用 `trigger` 字段做 key）
+export const TRIGGER_COLOR = EVENT_ICON_MAP

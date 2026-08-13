@@ -1,17 +1,13 @@
-// 前端 API 层。Demo 部署为纯静态站点（GitHub Pages）时，所有请求由浏览器端
-// store.js 处理（数据在 localStorage），不再依赖后端服务。
-// 接口签名与原后端 FastAPI 对齐 → 迁移到新数据模型（rule + template + run）。
+// 前端 API 层。Demo 部署为纯静态站点（GitHub Pages），所有请求由浏览器端
+// store.js 处理（数据在 localStorage），不依赖后端服务。
+// 接口对应 v3 模型：events × preset_tasks × subscriptions × runs。
 
 import * as store from './store.js'
 
-export const TRIGGERS = store.TRIGGERS
-export const TRIGGER_MAP = store.TRIGGER_MAP
-export const RULE_STATUS_META = store.RULE_STATUS_META
-export const TEMPLATE_STATUS_META = {
-  active: { label: '已上架', color: 'success' },
-  pending_review: { label: '审核中', color: 'processing' },
-  rejected: { label: '已驳回', color: 'error' },
-}
+export const EVENTS = store.EVENTS
+export const EVENT_MAP = store.EVENT_MAP
+export const SUB_STATUS_META = store.SUB_STATUS_META
+export const PRESET_STATUS_META = store.PRESET_STATUS_META
 
 async function wrap(fn) {
   return Promise.resolve().then(fn)
@@ -20,41 +16,49 @@ async function wrap(fn) {
 export const api = {
   // 元信息
   meta: () => wrap(() => ({
-    triggers: store.listTriggers(),
+    events: store.listEvents(),
     demoUser: store.DEMO_USER,
   })),
 
   // 统计
   stats: () => wrap(() => store.getStats()),
 
-  // 我的规则
-  listMyRules: () => wrap(() => store.listMyRules()),
-  getRule: (id) => wrap(() => {
-    const d = store.getRule(id)
-    if (!d) throw new Error('规则不存在')
-    return d
+  // 事件（常量）
+  listEvents: () => wrap(() => store.listEvents()),
+  getEvent: (id) => wrap(() => {
+    const e = store.getEvent(id)
+    if (!e) throw new Error('事件不存在')
+    return e
   }),
-  createRule: (payload) => wrap(() => store.createRule(payload)),
-  toggleRule: (id, enabled) => wrap(() => store.toggleRule(id, enabled)),
-  updateRule: (id, patch) => wrap(() => store.updateRule(id, patch)),
-  deleteRule: (id) => wrap(() => store.deleteRule(id)),
-  simulateRun: (id) => wrap(() => store.simulateRun(id)),
-  addFromTemplate: (templateId, opts) => wrap(() => store.addFromTemplate(templateId, opts)),
 
-  // 模板
-  listTemplates: (params) => wrap(() => store.listTemplates(params || {})),
-  getTemplate: (id) => wrap(() => {
-    const t = store.getTemplate(id)
-    if (!t) throw new Error('模板不存在')
+  // 预置任务
+  listPresetTasks: (params) => wrap(() => store.listPresetTasks(params || {})),
+  getPresetTask: (id) => wrap(() => {
+    const t = store.getPresetTask(id)
+    if (!t) throw new Error('预置任务不存在')
     return t
   }),
-  submitTemplate: (payload) => wrap(() => store.submitTemplate(payload)),
-  proposerTemplates: (proposer) => wrap(() => store.proposerTemplates(proposer)),
+  submitPresetTask: (payload) => wrap(() => store.submitPresetTask(payload)),
+  proposerPresetTasks: (proposer) => wrap(() => store.proposerPresetTasks(proposer)),
+
+  // 订阅
+  listSubscriptions: () => wrap(() => store.listSubscriptions()),
+  getSubscription: (id) => wrap(() => {
+    const s = store.getSubscription(id)
+    if (!s) throw new Error('订阅不存在')
+    return s
+  }),
+  createSubscription: (payload) => wrap(() => store.createSubscription(payload)),
+  toggleSubscription: (id, enabled) => wrap(() => store.toggleSubscription(id, enabled)),
+  deleteSubscription: (id) => wrap(() => store.deleteSubscription(id)),
+
+  // 执行
+  simulateRun: (id) => wrap(() => store.simulateRun(id)),
 
   // 审核
   reviewQueue: () => wrap(() => store.reviewQueue()),
-  reviewTemplate: (id, body) => wrap(() => store.reviewTemplate(id, body)),
-  reviewRule: (id, body) => wrap(() => store.reviewRule(id, body)),
+  reviewPresetTask: (id, body) => wrap(() => store.reviewPresetTask(id, body)),
+  reviewSubscription: (id, body) => wrap(() => store.reviewSubscription(id, body)),
 
   // 重置
   resetDemo: () => wrap(() => store.resetDemo()),

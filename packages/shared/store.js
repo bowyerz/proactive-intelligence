@@ -1,116 +1,114 @@
 // 浏览器端「后端」——纯静态、可在 GitHub Pages 部署。
-// 数据持久化在 localStorage，所有交互（创建任务、从模板添加、提交/审核模板、重置）均为本地状态。
+// 数据持久化在 localStorage，所有交互为本地状态。
 //
-// ===========================================================================
-// 新数据模型（v2，原 v1 的 events+subscriptions 模型已废弃）
-// ===========================================================================
+// =================================================================
+// v3 数据模型：从「触发器 × 模板」改造为「事件 × 任务」
+// =================================================================
 //
-// TRIGGERS          5 个固定触发器类型（截图 1）：聊天消息 / 邮件 / 会议纪要 / 审批 / Webhook
-// TEMPLATES         公共模板库（含待审核）：开发者提交 / 管理员审核通过后上架
-// MY_RULES          用户已安装的规则（含从模板添加 / 自建）：每条都是 (trigger × action)，带开关
-// RUNS              执行历史：每条对应一次「触发→执行」的结果记录
+// EVENTS          系统事件（用户不能创建）：当前 2 个 —— 会议开始前 30 分钟、会议结束
+// PRESET_TASKS    每个事件下的预置任务：开发者提案、平台认定 → 审核通过后上架到「事件市场」
+// SUBSCRIPTIONS   用户已订阅的任务：引用 (eventId, taskId)（来自预置），或携带 customName/customAction（自建）
+// RUNS            执行历史：订阅启用后，每次事件触发产出一条记录
 //
 // 关系：
-//   templates 是一对多 my_rules 的来源（点「从模板添加」会克隆出一条 isFromTemplate:true 的 my_rule）
-//   my_rules 通过 ruleId 反查 runs 看执行历史
-//
+//   EVENTS     1 → N  PRESET_TASKS（每个任务绑定一个 event）
+//   PRESET_TASKS 1 → N  SUBSCRIPTIONS（被多人订阅）
+//   SUBSCRIPTION 通过 subscriptionId 反查 RUNS
 
-const LS_TRIGGERS = 'am_triggers_v1' // 触发器是常量，但保留 key 以便将来扩展
-const LS_TEMPLATES = 'am_templates_v2'
-const LS_RULES = 'am_rules_v2'
-const LS_RUNS = 'am_runs_v2'
+const LS_EVENTS = 'am_events_v3'                 // 事件为常量，但保留 key 以便将来扩展
+const LS_PRESET_TASKS = 'am_preset_tasks_v3'
+const LS_SUBSCRIPTIONS = 'am_subscriptions_v3'
+const LS_RUNS = 'am_runs_v3'
 
 export const DEMO_USER = 'demo_user'
 
-// 规则状态元数据（给页面渲染标签）
-export const RULE_STATUS_META = {
+// ============== 元数据（页面渲染标签用）==============
+
+export const SUB_STATUS_META = {
   active: { label: '已启用', color: 'success' },
   pending_review: { label: '待审核', color: 'processing' },
   rejected: { label: '已驳回', color: 'error' },
-  draft: { label: '草稿', color: 'default' },
 }
 
-// ----- 6 个触发器（含「自定义」—— 用户可以自命名触发场景） -----
-export const TRIGGERS = [
-  { id: 'chat', name: '聊天消息', icon: 'MessageOutlined', desc: '接收聊天消息时触发', sourceKey: '飞书' },
-  { id: 'email', name: '邮件', icon: 'MailOutlined', desc: '收到新邮件时触发', sourceKey: '邮件' },
-  { id: 'minutes', name: '会议纪要', icon: 'FileTextOutlined', desc: '生成会议纪要时触发', sourceKey: '飞书' },
-  { id: 'approval', name: '审批', icon: 'AuditOutlined', desc: '审批状态变更时触发', sourceKey: '飞书' },
-  { id: 'webhook', name: 'Webhook', icon: 'ApiOutlined', desc: '接收 HTTP 请求时触发', sourceKey: '自定义' },
-  { id: 'custom', name: '自定义', icon: 'SettingOutlined', desc: '自己命名一个触发场景', sourceKey: '自定义' },
+export const PRESET_STATUS_META = {
+  active: { label: '已上架', color: 'success' },
+  pending_review: { label: '审核中', color: 'processing' },
+  rejected: { label: '已驳回', color: 'error' },
+}
+
+// ============== 事件（固定 2 个，对应产品认知）==============
+
+export const EVENTS = [
+  {
+    id: 'meeting-start-30min',
+    name: '会议开始前 30 分钟',
+    icon: 'ClockCircleOutlined',
+    bg: '#fff7e6',
+    color: '#d48806',
+    source: '飞书日历',
+    desc: '每个会议开始前 30 分钟触发，来自飞书日历',
+    checklist: '梳理议程 · 拉历史议题 · 准备要点',
+  },
+  {
+    id: 'meeting-end',
+    name: '会议结束',
+    icon: 'FlagOutlined',
+    bg: '#e6fffb',
+    color: '#08979c',
+    source: '飞书日历',
+    desc: '会议结束时触发，来自飞书日历',
+    checklist: '纪要 · 行动项 · 收尾通知',
+  },
 ]
 
-// 给页面复用的：把 trigger.id → TRIGGERS item
-export const TRIGGER_MAP = Object.fromEntries(TRIGGERS.map((t) => [t.id, t]))
+export const EVENT_MAP = Object.fromEntries(EVENTS.map((e) => [e.id, e]))
 
-// ----- 预置：6 个公共模板（5 上架 + 1 待审核）-----
-const SEED_TEMPLATES = [
+// ============== Seed 数据：4 条预置任务（其中 1 条 pending_review 走审核流）==============
+
+const SEED_PRESET_TASKS = [
   {
-    id: 'tpl_email_triage',
-    name: '新邮件智能分级与摘要',
-    trigger: 'email',
-    description: '自动给邮件分级并写摘要',
-    action: '把收到的新邮件做智能分级（重要/常规/垃圾），并写一份 50 字内的摘要同步到我的对话框。',
+    id: 'pt_open_points',
+    eventId: 'meeting-start-30min',
+    name: '生成我的开场要点',
+    description: '开会前先过一遍要点',
+    actionPreview: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
     proposer: '平台官方',
     status: 'active',
-    installs: 1234,
-    submittedAt: '2026-03-12T10:00:00Z',
-    reviewedAt: '2026-03-13T10:00:00Z',
+    installs: 184,
+    submittedAt: '2026-07-20T10:00:00Z',
+    reviewedAt: '2026-07-20T18:00:00Z',
   },
   {
-    id: 'tpl_approval_reminder',
-    name: '待审批任务智能提醒',
-    trigger: 'approval',
-    description: '审批快超时自动通知',
-    action: '对待审批任务做摘要，超时前 2 小时自动给我发提醒，并附一键审批跳转链接。',
+    id: 'pt_minutes',
+    eventId: 'meeting-end',
+    name: '整理会议纪要',
+    description: '会后第一时间纪要',
+    actionPreview: '基于录音/笔记自动生成议题、结论、待办的结构化纪要',
     proposer: '平台官方',
     status: 'active',
-    installs: 852,
-    submittedAt: '2026-03-15T10:00:00Z',
-    reviewedAt: '2026-03-15T18:00:00Z',
+    installs: 312,
+    submittedAt: '2026-07-21T10:00:00Z',
+    reviewedAt: '2026-07-21T18:00:00Z',
   },
   {
-    id: 'tpl_minutes_summary',
-    name: '会议纪要自动生成与授权',
-    trigger: 'minutes',
-    description: '会后自动整理纪要和待办',
-    action: '会议结束后自动生成纪要 + 待办分配（动作人 / 截止时间），并把纪要同步到群对话。',
+    id: 'pt_actions',
+    eventId: 'meeting-end',
+    name: '归档行动项',
+    description: '把待办归到我名下',
+    actionPreview: '提取所有 action item 的 owner + deadline，自动入我的待办',
     proposer: '平台官方',
     status: 'active',
-    installs: 642,
-    submittedAt: '2026-03-18T10:00:00Z',
-    reviewedAt: '2026-03-18T16:00:00Z',
+    installs: 247,
+    submittedAt: '2026-07-22T10:00:00Z',
+    reviewedAt: '2026-07-22T18:00:00Z',
   },
+  // pending_review —— 让审核页有事干
   {
-    id: 'tpl_chat_urgent',
-    name: '群消息加急关键词提醒',
-    trigger: 'chat',
-    description: '出现加急词立刻私聊推送',
-    action: '当群里消息出现「加急」「@我」「老板」等关键词，立刻私聊推送给我，并把原消息附在末尾。',
-    proposer: '平台官方',
-    status: 'active',
-    installs: 423,
-    submittedAt: '2026-03-22T10:00:00Z',
-    reviewedAt: '2026-03-22T20:00:00Z',
-  },
-  {
-    id: 'tpl_webhook_monitor',
-    name: '监控系统报警自动处置',
-    trigger: 'webhook',
-    description: 'Prometheus / Grafana 告警自动归并',
-    action: '收到监控告警 Webhook 时，自动按服务/等级归并，给出 1 段处置建议，并写一行进日报。',
-    proposer: '平台官方',
-    status: 'active',
-    installs: 311,
-    submittedAt: '2026-03-25T10:00:00Z',
-    reviewedAt: '2026-03-25T18:00:00Z',
-  },
-  {
-    id: 'tpl_warehouse_anomaly',
-    name: '数据仓库异常自动归因',
-    trigger: 'webhook',
-    description: '数据任务异常自动给出根因',
-    action: '当数据仓库任务失败 / 延迟告警时，自动拉最近 24 小时相关 SQL 与变更记录，给出 1 段根因分析。',
+    id: 'pt_digest_for_skippers',
+    eventId: 'meeting-end',
+    name: '同步纪要给未参会人',
+    description: '没参会的人也能拿到要点',
+    actionPreview: '会后把纪要摘要发到部门群，标注「参与者 / 未参与者」',
     proposer: '张开发',
     status: 'pending_review',
     installs: 0,
@@ -119,136 +117,101 @@ const SEED_TEMPLATES = [
   },
 ]
 
-// 6 个模板预设的执行历史（截图 5 的设计），与"我的任务"开机的 3 条规则对应
-const SEED_RUNS = (() => {
-  const rows = []
-  let seq = 0
-  const seedForRule = (ruleId, summaries) => {
-    const base = new Date('2026-04-14T14:20:59Z').getTime()
-    summaries.forEach((s, i) => {
-      // 按天回退：2026-04-14 14:20:59 → 4-13 → 4-12 → 4-7 → 4-5（与截图 5 时间戳完全一致）
-      const dates = [
-        '2026-04-14T14:20:59Z',
-        '2026-04-13T14:20:59Z',
-        '2026-04-12T14:20:59Z',
-        '2026-04-07T14:20:59Z',
-        '2026-04-05T14:20:59Z',
-      ]
-      rows.push({
-        id: `run_seed_${++seq}`,
-        ruleId,
-        timestamp: dates[i] || dates[dates.length - 1],
-        status: 'success',
-        tokens: 50000,
-        summary: s,
-      })
-    })
-  }
-  seedForRule('rule_demo_email', [
-    '处理 12 封邮件，重要 2 封、客户邮件 1 封、垃圾 4 封',
-    '处理 8 封邮件，重要 1 封为合同法务邮件',
-    '处理 15 封邮件，重要 3 封含 1 封紧急',
-    '处理 6 封邮件，均为常规',
-    '处理 10 封邮件，重要 2 封、垃圾 1 封',
-  ])
-  seedForRule('rule_demo_approval', [
-    '扫描待审批 4 条，1 条 1 小时内超时，已推送提醒',
-    '扫描待审批 3 条，无超时',
-    '扫描待审批 5 条，1 条 30 分钟内超时',
-    '扫描待审批 2 条，无超时',
-    '扫描待审批 6 条，2 条超时，已推送提醒',
-  ])
-  seedForRule('rule_demo_minutes', [
-    '周会纪要已生成，3 条待办已分配',
-    '产品评审会纪要已生成',
-    '客户需求评审会纪要已生成，2 条待办',
-    '月复盘会议纪要已生成',
-    '研发周会纪要已生成，4 条待办',
-  ])
-  return rows
-})()
-
-// 3 条已安装规则 + 1 条草稿，对应截图 1 的初始列表（全部预审为 active）
-const SEED_RULES = [
+// 用户侧的订阅：2 条 active 启用、1 条 active 但未启用（草稿）、1 条 pending_review 自建
+const SEED_SUBSCRIPTIONS = [
   {
-    id: 'rule_demo_email',
-    name: '新邮件智能分级与摘要',
-    trigger: 'email',
-    action: '把收到的新邮件做智能分级（重要/常规/垃圾），并写一份 50 字内的摘要同步到我的对话框。',
+    id: 'sub_demo_open_points',
+    eventId: 'meeting-start-30min',
+    taskId: 'pt_open_points',
+    customName: null,
+    customAction: null,
+    name: '生成我的开场要点',
+    description: '开会前先过一遍要点',
+    action: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
     enabled: true,
-    isFromTemplate: 'tpl_email_triage',
-    templateName: '新邮件智能分级与摘要',
+    isCustom: false,
     proposer: '平台官方',
     creator: DEMO_USER,
     status: 'active',
     submittedAt: '2026-08-01T10:00:00Z',
     reviewedAt: '2026-08-01T10:00:00Z',
+    rejectReason: null,
     createdAt: '2026-08-01T10:00:00Z',
   },
   {
-    id: 'rule_demo_approval',
-    name: '待审批任务智能提醒',
-    trigger: 'approval',
-    action: '对待审批任务做摘要，超时前 2 小时自动给我发提醒，并附一键审批跳转链接。',
+    id: 'sub_demo_minutes',
+    eventId: 'meeting-end',
+    taskId: 'pt_minutes',
+    customName: null,
+    customAction: null,
+    name: '整理会议纪要',
+    description: '会后第一时间纪要',
+    action: '基于录音/笔记自动生成议题、结论、待办的结构化纪要',
     enabled: true,
-    isFromTemplate: 'tpl_approval_reminder',
-    templateName: '待审批任务智能提醒',
+    isCustom: false,
     proposer: '平台官方',
     creator: DEMO_USER,
     status: 'active',
     submittedAt: '2026-08-02T10:00:00Z',
     reviewedAt: '2026-08-02T10:00:00Z',
+    rejectReason: null,
     createdAt: '2026-08-02T10:00:00Z',
   },
+  // active 但是 enabled=false —— 演示「草稿」状态
   {
-    id: 'rule_demo_minutes',
-    name: '会议纪要自动生成与授权',
-    trigger: 'minutes',
-    action: '会议结束后自动生成纪要 + 待办分配（动作人 / 截止时间），并把纪要同步到群对话。',
-    enabled: true,
-    isFromTemplate: 'tpl_minutes_summary',
-    templateName: '会议纪要自动生成与授权',
+    id: 'sub_demo_actions_draft',
+    eventId: 'meeting-end',
+    taskId: 'pt_actions',
+    customName: null,
+    customAction: null,
+    name: '归档行动项',
+    description: '把待办归到我名下',
+    action: '提取所有 action item 的 owner + deadline，自动入我的待办',
+    enabled: false,
+    isCustom: false,
     proposer: '平台官方',
     creator: DEMO_USER,
     status: 'active',
     submittedAt: '2026-08-03T10:00:00Z',
     reviewedAt: '2026-08-03T10:00:00Z',
+    rejectReason: null,
     createdAt: '2026-08-03T10:00:00Z',
   },
+  // 自建、待审核 —— 让管理员页一打开就有事干
   {
-    id: 'rule_demo_chat_draft',
-    name: '群消息加急关键词提醒（草稿）',
-    trigger: 'chat',
-    action: '当群里消息出现「加急」「@我」「老板」等关键词，立刻私聊推送给我，并把原消息附在末尾。',
+    id: 'sub_seed_pending_custom',
+    eventId: 'meeting-end',
+    taskId: null,
+    customName: '把纪要同步给直属 leader',
+    customAction: '会后把会议纪要整理成不超过 8 行的要点，发私聊给直属 leader',
+    name: '把纪要同步给直属 leader',
+    description: '自建 · 会后',
+    action: '会后把会议纪要整理成不超过 8 行的要点，发私聊给直属 leader',
     enabled: false,
-    isFromTemplate: 'tpl_chat_urgent',
-    templateName: '群消息加急关键词提醒',
-    proposer: '平台官方',
-    creator: DEMO_USER,
-    status: 'active',
-    submittedAt: '2026-08-04T10:00:00Z',
-    reviewedAt: '2026-08-04T10:00:00Z',
-    createdAt: '2026-08-04T10:00:00Z',
-  },
-  // 一条预置的「待审核」用户自建规则 — 让管理员页一打开就有事干
-  {
-    id: 'rule_seed_pending',
-    name: '每日 8 点自动拉日报',
-    trigger: 'custom',
-    customName: '每日 8 点',
-    action: '早上 8 点拉昨日日报汇总（指标 + 关键事件）并私聊推送给我。',
-    enabled: false,
-    isFromTemplate: null,
-    templateName: null,
+    isCustom: true,
     proposer: DEMO_USER,
     creator: DEMO_USER,
     status: 'pending_review',
-    submittedAt: '2026-08-10T09:30:00Z',
+    submittedAt: '2026-08-12T09:30:00Z',
     reviewedAt: null,
     rejectReason: null,
-    createdAt: '2026-08-10T09:30:00Z',
+    createdAt: '2026-08-12T09:30:00Z',
   },
 ]
+
+// 各订阅的执行历史（订阅启用后的事件触发记录）
+const SEED_RUNS = [
+  // 开场要点（多次会前准备）
+  { id: 'run_seed_1', ruleId: 'sub_demo_open_points', timestamp: '2026-08-12T14:30:00Z', status: 'success', tokens: 30000, summary: '已生成 3 条开场要点；提示参会人 A 上次会后还有 2 条未闭环' },
+  { id: 'run_seed_2', ruleId: 'sub_demo_open_points', timestamp: '2026-08-11T14:30:00Z', status: 'success', tokens: 28500, summary: '已生成 3 条开场要点；今日议程：产品路线 / 财务复盘 / 招聘' },
+  { id: 'run_seed_3', ruleId: 'sub_demo_open_points', timestamp: '2026-08-08T14:30:00Z', status: 'success', tokens: 32700, summary: '已生成 3 条开场要点；已拉参会人 B、C 的近 3 次决议' },
+  // 会议纪要（多次会议）
+  { id: 'run_seed_4', ruleId: 'sub_demo_minutes', timestamp: '2026-08-12T11:00:00Z', status: 'success', tokens: 41200, summary: '周会纪要已生成（5 个议题、3 条待办已分配）' },
+  { id: 'run_seed_5', ruleId: 'sub_demo_minutes', timestamp: '2026-08-10T16:00:00Z', status: 'success', tokens: 36800, summary: '产品评审会纪要已生成，2 条待办已分配 owner' },
+  { id: 'run_seed_6', ruleId: 'sub_demo_minutes', timestamp: '2026-08-07T17:00:00Z', status: 'success', tokens: 38900, summary: '客户需求评审会纪要已生成（4 条待办）' },
+]
+
+// ============== 工具 ==============
 
 function clone(x) { return JSON.parse(JSON.stringify(x)) }
 
@@ -262,74 +225,104 @@ function loadOrInit(key, seed) {
   return fresh
 }
 
-function loadTemplates() { return loadOrInit(LS_TEMPLATES, SEED_TEMPLATES) }
-function saveTemplates(arr) { localStorage.setItem(LS_TEMPLATES, JSON.stringify(arr)) }
-function loadRules() { return loadOrInit(LS_RULES, SEED_RULES) }
-function saveRules(arr) { localStorage.setItem(LS_RULES, JSON.stringify(arr)) }
+// EVENTS 是常量，直接克隆
+function loadEvents() { return clone(EVENTS) }
+function loadPresetTasks() { return loadOrInit(LS_PRESET_TASKS, SEED_PRESET_TASKS) }
+function savePresetTasks(arr) { localStorage.setItem(LS_PRESET_TASKS, JSON.stringify(arr)) }
+function loadSubscriptions() { return loadOrInit(LS_SUBSCRIPTIONS, SEED_SUBSCRIPTIONS) }
+function saveSubscriptions(arr) { localStorage.setItem(LS_SUBSCRIPTIONS, JSON.stringify(arr)) }
 function loadRuns() { return loadOrInit(LS_RUNS, SEED_RUNS) }
 function saveRuns(arr) { localStorage.setItem(LS_RUNS, JSON.stringify(arr)) }
 
-// 给 my_rule 附加触发器信息 + 状态元数据
-function decorateRule(rule) {
-  const t = TRIGGER_MAP[rule.trigger]
+// 装饰：subscription 附上 event 元数据 + 状态
+function decorateSubscription(sub) {
+  const ev = EVENT_MAP[sub.eventId]
+  const task = sub.taskId ? loadPresetTasks().find((t) => t.id === sub.taskId) : null
   return {
-    ...rule,
-    triggerName: t?.name || rule.trigger,
-    triggerIcon: t?.icon || 'ApiOutlined',
-    triggerDesc: t?.desc || '',
-    statusMeta: RULE_STATUS_META[rule.status] || RULE_STATUS_META.pending_review,
+    ...sub,
+    eventName: ev?.name || sub.eventId,
+    eventIcon: ev?.icon || 'ClockCircleOutlined',
+    eventBg: ev?.bg || '#f3f4f6',
+    eventColor: ev?.color || '#6b7280',
+    eventDesc: ev?.desc || '',
+    eventSource: ev?.source || '',
+    taskName: task?.name || sub.customName || '自定义任务',
+    statusMeta: SUB_STATUS_META[sub.status] || SUB_STATUS_META.pending_review,
   }
 }
 
-// ===== 触发器列表（页面用） =====
-export function listTriggers() {
-  return clone(TRIGGERS)
+function decoratePresetTask(t) {
+  const ev = EVENT_MAP[t.eventId]
+  return {
+    ...t,
+    eventName: ev?.name || t.eventId,
+    eventIcon: ev?.icon || 'ClockCircleOutlined',
+    eventBg: ev?.bg || '#f3f4f6',
+    eventColor: ev?.color || '#6b7280',
+    statusMeta: PRESET_STATUS_META[t.status] || PRESET_STATUS_META.pending_review,
+  }
 }
 
-// ===== 公共模板 =====
-export function listTemplates({ status, proposer, q } = {}) {
-  let arr = loadTemplates()
+// ============== 事件（只读）==============
+
+export function listEvents() {
+  return loadEvents()
+}
+
+export function getEvent(id) {
+  const e = EVENTS.find((x) => x.id === id)
+  return e ? clone(e) : null
+}
+
+// ============== 预置任务 ==============
+
+export function listPresetTasks({ eventId, status, proposer, q } = {}) {
+  let arr = loadPresetTasks()
+  if (eventId) arr = arr.filter((t) => t.eventId === eventId)
   if (status) arr = arr.filter((t) => t.status === status)
   else arr = arr.filter((t) => t.status === 'active') // 默认只看已上架
   if (proposer) arr = arr.filter((t) => t.proposer === proposer)
   if (q) {
     const k = String(q).trim().toLowerCase()
-    arr = arr.filter((t) => `${t.name} ${t.description}`.toLowerCase().includes(k))
+    arr = arr.filter((t) => `${t.name} ${t.description} ${t.actionPreview}`.toLowerCase().includes(k))
   }
-  return { items: arr.map((t) => ({ ...t, triggerInfo: TRIGGER_MAP[t.trigger] })), total: arr.length }
+  return { items: arr.map(decoratePresetTask), total: arr.length }
 }
 
-export function getTemplate(id) {
-  const t = loadTemplates().find((x) => x.id === id)
-  return t ? { ...t, triggerInfo: TRIGGER_MAP[t.trigger] } : null
+export function getPresetTask(id) {
+  const t = loadPresetTasks().find((x) => x.id === id)
+  return t ? decoratePresetTask(t) : null
 }
 
-export function submitTemplate(payload) {
-  const arr = loadTemplates()
+export function submitPresetTask(payload) {
+  const arr = loadPresetTasks()
   if (arr.find((t) => t.id === payload.id)) {
-    throw new Error(`模板 ID「${payload.id}」已存在`)
+    throw new Error(`预置任务 ID「${payload.id}」已存在`)
+  }
+  if (!EVENT_MAP[payload.eventId]) {
+    throw new Error(`未知事件「${payload.eventId}」`)
   }
   const doc = {
     id: payload.id,
+    eventId: payload.eventId,
     name: payload.name,
-    trigger: payload.trigger,
     description: payload.description || '',
-    action: payload.action,
-    proposer: payload.proposer || '开发者',
+    actionPreview: payload.actionPreview,
+    proposer: payload.proposer || '张开发',
     status: 'pending_review',
     installs: 0,
     submittedAt: new Date().toISOString(),
     reviewedAt: null,
   }
   arr.push(doc)
-  saveTemplates(arr)
-  return { ...doc, triggerInfo: TRIGGER_MAP[doc.trigger] }
+  savePresetTasks(arr)
+  return decoratePresetTask(doc)
 }
 
-export function reviewTemplate(id, { decision, note, reviewer }) {
-  const arr = loadTemplates()
+export function reviewPresetTask(id, { decision, note, reviewer }) {
+  const arr = loadPresetTasks()
   const idx = arr.findIndex((t) => t.id === id)
-  if (idx < 0) throw new Error('模板不存在')
+  if (idx < 0) throw new Error('预置任务不存在')
   if (decision === 'reject' && !(note || '').trim()) {
     throw new Error('驳回时必须填写理由')
   }
@@ -340,35 +333,197 @@ export function reviewTemplate(id, { decision, note, reviewer }) {
     reviewer: reviewer || '平台管理员',
     rejectReason: decision === 'reject' ? note : null,
   }
-  saveTemplates(arr)
-  return { ...arr[idx], triggerInfo: TRIGGER_MAP[arr[idx].trigger] }
+  savePresetTasks(arr)
+  return decoratePresetTask(arr[idx])
 }
 
-// 审核队列：合并「待审规则」与「待审模板」，按提交时间倒序
+export function proposerPresetTasks(proposer) {
+  const arr = loadPresetTasks().filter((t) => t.proposer === proposer)
+  return { items: arr.map(decoratePresetTask), total: arr.length }
+}
+
+// ============== 订阅 ==============
+
+export function listSubscriptions() {
+  const arr = loadSubscriptions()
+  return { items: arr.map(decorateSubscription), total: arr.length }
+}
+
+export function getSubscription(id) {
+  const s = loadSubscriptions().find((x) => x.id === id)
+  if (!s) return null
+  const out = decorateSubscription(s)
+  out.runs = loadRuns()
+    .filter((run) => run.ruleId === id)
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+  return out
+}
+
+// 创建订阅：传 taskId 表示从预置订阅；不传则视为自定义
+export function createSubscription(payload) {
+  const arr = loadSubscriptions()
+  const id = payload.id || `sub_${Date.now().toString(36)}_${Math.floor(Math.random() * 0xffff).toString(36)}`
+  if (arr.find((s) => s.id === id)) throw new Error('订阅 ID 已存在')
+
+  let doc
+  if (payload.taskId) {
+    // 从预置订阅
+    const t = loadPresetTasks().find((x) => x.id === payload.taskId)
+    if (!t) throw new Error('预置任务不存在')
+    if (t.status !== 'active') throw new Error('该预置任务尚未上架')
+    doc = {
+      id,
+      eventId: t.eventId,
+      taskId: t.id,
+      customName: null,
+      customAction: null,
+      name: t.name,
+      description: t.description,
+      action: t.actionPreview,
+      enabled: !payload.asDraft,
+      isCustom: false,
+      proposer: t.proposer,
+      creator: DEMO_USER,
+      status: 'active',
+      submittedAt: t.submittedAt || new Date().toISOString(),
+      reviewedAt: new Date().toISOString(),
+      rejectReason: null,
+      createdAt: new Date().toISOString(),
+    }
+  } else {
+    // 自定义 —— 必须经过审核
+    const ev = EVENT_MAP[payload.eventId]
+    if (!ev) throw new Error('未知事件')
+    const customName = (payload.customName || '').trim()
+    const customAction = (payload.customAction || '').trim()
+    if (customName.length < 2) throw new Error('请填写任务名称（至少 2 个字）')
+    if (customAction.length < 4) throw new Error('请填写执行内容（至少 4 个字）')
+    doc = {
+      id,
+      eventId: payload.eventId,
+      taskId: null,
+      customName,
+      customAction,
+      name: customName,
+      description: '我的自定义任务',
+      action: customAction,
+      enabled: false,
+      isCustom: true,
+      proposer: DEMO_USER,
+      creator: DEMO_USER,
+      status: 'pending_review',
+      submittedAt: new Date().toISOString(),
+      reviewedAt: null,
+      rejectReason: null,
+      createdAt: new Date().toISOString(),
+    }
+  }
+
+  arr.push(doc)
+  saveSubscriptions(arr)
+  return decorateSubscription(doc)
+}
+
+export function reviewSubscription(id, { decision, note, reviewer }) {
+  const arr = loadSubscriptions()
+  const idx = arr.findIndex((s) => s.id === id)
+  if (idx < 0) throw new Error('订阅不存在')
+  if (decision === 'reject' && !(note || '').trim()) {
+    throw new Error('驳回时必须填写理由')
+  }
+  arr[idx] = {
+    ...arr[idx],
+    status: decision === 'approve' ? 'active' : 'rejected',
+    reviewedAt: new Date().toISOString(),
+    reviewer: reviewer || '平台管理员',
+    rejectReason: decision === 'reject' ? note : null,
+    enabled: decision === 'approve' ? true : arr[idx].enabled,
+  }
+  saveSubscriptions(arr)
+  return decorateSubscription(arr[idx])
+}
+
+export function toggleSubscription(id, enabled) {
+  const arr = loadSubscriptions()
+  const idx = arr.findIndex((s) => s.id === id)
+  if (idx < 0) throw new Error('订阅不存在')
+  if (arr[idx].status !== 'active') {
+    throw new Error('订阅尚未通过审核，无法切换')
+  }
+  arr[idx] = { ...arr[idx], enabled: enabled !== false }
+  saveSubscriptions(arr)
+  return decorateSubscription(arr[idx])
+}
+
+export function deleteSubscription(id) {
+  saveSubscriptions(loadSubscriptions().filter((s) => s.id !== id))
+  saveRuns(loadRuns().filter((run) => run.ruleId !== id))
+  return { deleted: true, id }
+}
+
+// ============== 执行 ==============
+
+export function simulateRun(subscriptionId) {
+  const s = loadSubscriptions().find((x) => x.id === subscriptionId)
+  if (!s) throw new Error('订阅不存在')
+  if (s.status !== 'active') throw new Error('订阅尚未通过审核')
+  if (!s.enabled) throw new Error('订阅未启用')
+
+  const run = {
+    id: `run_${Date.now()}`,
+    ruleId: subscriptionId,
+    timestamp: new Date().toISOString(),
+    status: 'success',
+    tokens: 30000 + Math.floor(Math.random() * 30000),
+    summary: summarizeFor(s),
+  }
+  const arr = loadRuns()
+  arr.push(run)
+  saveRuns(arr)
+  return run
+}
+
+function summarizeFor(s) {
+  if (s.eventId === 'meeting-start-30min') {
+    return `「${s.name}」已执行：拉取参会人 + 历史议题，整理 3 条要点提醒`
+  }
+  if (s.eventId === 'meeting-end') {
+    if (s.taskId === 'pt_minutes') return `会议纪要已生成（议题 / 结论 / 待办）`
+    if (s.taskId === 'pt_actions') return `已提取所有行动项并归档到我的待办`
+    return `「${s.name}」已按自定义动作执行`
+  }
+  return `「${s.name}」已执行`
+}
+
+// ============== 审核队列（合并预置任务 + 自定义订阅）==============
+
 export function reviewQueue() {
-  const templates = loadTemplates()
-  const rules = loadRules()
+  const presets = loadPresetTasks()
+  const subs = loadSubscriptions()
 
-  const pendingTpl = templates
+  const pendingPreset = presets
     .filter((t) => t.status === 'pending_review')
-    .map((t) => ({ ...t, kind: 'template', triggerInfo: TRIGGER_MAP[t.trigger] }))
-  const pendingRules = rules
-    .filter((r) => r.status === 'pending_review')
-    .map((r) => ({ ...decorateRule(r), kind: 'rule' }))
+    .map(decoratePresetTask)
+    .map((t) => ({ ...t, kind: 'preset' }))
+  const pendingSub = subs
+    .filter((s) => s.status === 'pending_review')
+    .map(decorateSubscription)
+    .map((s) => ({ ...s, kind: 'subscription' }))
 
-  const pending = [...pendingTpl, ...pendingRules].sort(
+  const pending = [...pendingPreset, ...pendingSub].sort(
     (a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')),
   )
 
-  // 已审核历史：模板和规则的 rejected + 已通过(active) —— 形成完整审核档案
-  const reviewedTpl = templates
+  const reviewedPreset = presets
     .filter((t) => t.status === 'rejected' || t.status === 'active')
-    .map((t) => ({ ...t, kind: 'template', triggerInfo: TRIGGER_MAP[t.trigger] }))
-  const reviewedRules = rules
-    .filter((r) => r.status === 'rejected' || r.status === 'active')
-    .map((r) => ({ ...decorateRule(r), kind: 'rule' }))
+    .map(decoratePresetTask)
+    .map((t) => ({ ...t, kind: 'preset' }))
+  const reviewedSub = subs
+    .filter((s) => s.status === 'rejected' || s.status === 'active')
+    .map(decorateSubscription)
+    .map((s) => ({ ...s, kind: 'subscription' }))
 
-  const reviewed = [...reviewedTpl, ...reviewedRules].sort(
+  const reviewed = [...reviewedPreset, ...reviewedSub].sort(
     (a, b) => String(b.reviewedAt || '').localeCompare(String(a.reviewedAt || '')),
   )
 
@@ -376,203 +531,45 @@ export function reviewQueue() {
     pending,
     reviewed,
     pendingCount: pending.length,
-    templatePending: pendingTpl.length,
-    rulePending: pendingRules.length,
+    presetPending: pendingPreset.length,
+    subPending: pendingSub.length,
   }
 }
 
-export function proposerTemplates(proposer) {
-  const arr = loadTemplates().filter((t) => t.proposer === proposer)
-  return {
-    items: arr.map((t) => ({ ...t, triggerInfo: TRIGGER_MAP[t.trigger] })),
-    total: arr.length,
-  }
-}
+// ============== 统计 ==============
 
-// ===== 我的规则 =====
-export function listMyRules() {
-  const rules = loadRules().map(decorateRule)
-  return { items: rules, total: rules.length }
-}
-
-export function getRule(id) {
-  const r = loadRules().find((x) => x.id === id)
-  if (!r) return null
-  const out = decorateRule(r)
-  out.runs = loadRuns().filter((run) => run.ruleId === id)
-    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
-  return out
-}
-
-export function createRule(payload) {
-  const arr = loadRules()
-  // 时间戳 + 4 位随机后缀，同毫秒多次创建也不会冲突
-  const id = payload.id || `rule_${Date.now().toString(36)}_${Math.floor(Math.random() * 0xffff).toString(36)}`
-  if (arr.find((r) => r.id === id)) throw new Error('规则 ID 已存在')
-  // 默认进「待审核」—— 所有用户创建的规则都需要管理员审核
-  const doc = {
-    id,
-    name: payload.name,
-    trigger: payload.trigger,
-    customName: payload.trigger === 'custom' ? (payload.customName || '').trim() : null,
-    action: payload.action,
-    enabled: false, // 待审核通过之前不允许启用
-    isFromTemplate: payload.isFromTemplate || null,
-    templateName: payload.templateName || null,
-    proposer: DEMO_USER,
-    creator: DEMO_USER,
-    status: 'pending_review',
-    submittedAt: new Date().toISOString(),
-    reviewedAt: null,
-    rejectReason: null,
-    createdAt: new Date().toISOString(),
-  }
-  arr.push(doc)
-  saveRules(arr)
-  return decorateRule(doc)
-}
-
-// 管理员审核规则
-export function reviewRule(id, { decision, note, reviewer }) {
-  const arr = loadRules()
-  const idx = arr.findIndex((r) => r.id === id)
-  if (idx < 0) throw new Error('规则不存在')
-  if (decision === 'reject' && !(note || '').trim()) {
-    throw new Error('驳回时必须填写理由')
-  }
-  arr[idx] = {
-    ...arr[idx],
-    status: decision === 'approve' ? 'active' : 'rejected',
-    reviewedAt: new Date().toISOString(),
-    reviewer: reviewer || '平台管理员',
-    rejectReason: decision === 'reject' ? note : null,
-    // 通过时自动启用
-    enabled: decision === 'approve' ? true : arr[idx].enabled,
-  }
-  saveRules(arr)
-  return decorateRule(arr[idx])
-}
-
-export function addFromTemplate(templateId, { asDraft = false } = {}) {
-  const t = getTemplate(templateId)
-  if (!t) throw new Error('模板不存在或未上架')
-  if (t.status !== 'active') throw new Error('该模板尚未上架')
-  // 模板默认 active，通过后会启用
-  const doc = {
-    id: `rule_${Date.now().toString(36)}_${Math.floor(Math.random() * 0xffff).toString(36)}`,
-    name: t.name,
-    trigger: t.trigger,
-    customName: t.trigger === 'custom' ? t.name : null,
-    action: t.action,
-    enabled: !asDraft,
-    isFromTemplate: t.id,
-    templateName: t.name,
-    proposer: t.proposer,
-    creator: DEMO_USER,
-    status: 'active', // 从模板添加相当于已审核通过
-    submittedAt: t.submittedAt || new Date().toISOString(),
-    reviewedAt: new Date().toISOString(),
-    rejectReason: null,
-    createdAt: new Date().toISOString(),
-  }
-  const arr = loadRules()
-  arr.push(doc)
-  saveRules(arr)
-  return decorateRule(doc)
-}
-
-export function toggleRule(id, enabled) {
-  const arr = loadRules()
-  const idx = arr.findIndex((r) => r.id === id)
-  if (idx < 0) throw new Error('规则不存在')
-  // 只有审核通过的规则才能启停
-  if (arr[idx].status !== 'active') {
-    throw new Error('规则尚未通过审核，无法切换')
-  }
-  arr[idx] = { ...arr[idx], enabled: enabled !== false }
-  saveRules(arr)
-  return decorateRule(arr[idx])
-}
-
-export function updateRule(id, patch) {
-  const arr = loadRules()
-  const idx = arr.findIndex((r) => r.id === id)
-  if (idx < 0) throw new Error('规则不存在')
-  arr[idx] = { ...arr[idx], ...patch }
-  saveRules(arr)
-  return decorateRule(arr[idx])
-}
-
-export function deleteRule(id) {
-  saveRules(loadRules().filter((r) => r.id !== id))
-  saveRuns(loadRuns().filter((run) => run.ruleId !== id))
-  return { deleted: true, id }
-}
-
-// 执行一次（演示效果，模拟一次"触发→执行"）
-export function simulateRun(ruleId) {
-  const r = loadRules().find((x) => x.id === ruleId)
-  if (!r) throw new Error('规则不存在')
-  if (r.status !== 'active') throw new Error('规则尚未通过审核')
-  if (!r.enabled) throw new Error('规则未启用')
-  const arr = loadRuns()
-  const run = {
-    id: `run_${Date.now()}`,
-    ruleId,
-    timestamp: new Date().toISOString(),
-    status: 'success',
-    tokens: 30000 + Math.floor(Math.random() * 30000),
-    summary: summarizeFor(r.trigger),
-  }
-  arr.push(run)
-  saveRuns(arr)
-  return run
-}
-
-function summarizeFor(trigger) {
-  const map = {
-    email: '处理新邮件，已生成分级与摘要',
-    chat: '识别加急词，已推送提醒',
-    approval: '扫描待审批，发现 1 条快超时已提醒',
-    minutes: '会议结束，已生成纪要与待办',
-    webhook: '收到外部信号，已按规则归并并写一行日报',
-  }
-  return map[trigger] || '已按规则处理触发事件'
-}
-
-// ===== 统计 =====
 export function getStats() {
-  const rules = loadRules()
-  const templates = loadTemplates()
+  const subs = loadSubscriptions()
+  const presets = loadPresetTasks()
   const runs = loadRuns()
-  const activeRules = rules.filter((r) => r.status === 'active')
-  const enabled = activeRules.filter((r) => r.enabled).length
+  const active = subs.filter((s) => s.status === 'active')
   return {
-    ruleCount: rules.length,
-    activeRuleCount: activeRules.length,
-    enabledCount: enabled,
-    disabledCount: activeRules.length - enabled,
-    pendingRuleCount: rules.filter((r) => r.status === 'pending_review').length,
-    rejectedRuleCount: rules.filter((r) => r.status === 'rejected').length,
-    templateCount: templates.filter((t) => t.status === 'active').length,
-    pendingTemplateCount: templates.filter((t) => t.status === 'pending_review').length,
-    totalPending: rules.filter((r) => r.status === 'pending_review').length
-      + templates.filter((t) => t.status === 'pending_review').length,
+    subscriptionCount: subs.length,
+    activeSubscriptionCount: active.length,
+    enabledCount: active.filter((s) => s.enabled).length,
+    pendingSubscriptionCount: subs.filter((s) => s.status === 'pending_review').length,
+    rejectedSubscriptionCount: subs.filter((s) => s.status === 'rejected').length,
+    presetTaskCount: presets.filter((t) => t.status === 'active').length,
+    pendingPresetTaskCount: presets.filter((t) => t.status === 'pending_review').length,
+    totalPending: subs.filter((s) => s.status === 'pending_review').length
+      + presets.filter((t) => t.status === 'pending_review').length,
     totalRuns: runs.length,
   }
 }
 
-// ===== 重置 =====
+// ============== 重置 ==============
+
 export function resetDemo() {
-  // 清空新旧版本的 key，避免老数据结构残留
+  // 清空所有新旧版本的 key，避免老数据结构残留
   ;[
-    LS_TEMPLATES, LS_RULES, LS_RUNS,
-    'am_events_v1', 'am_subs_v1', // legacy v1 keys (废弃)
+    LS_EVENTS, LS_PRESET_TASKS, LS_SUBSCRIPTIONS, LS_RUNS,
+    'am_triggers_v1', 'am_templates_v2', 'am_rules_v2', 'am_runs_v2',
+    'am_events_v1', 'am_subs_v1',
   ].forEach((k) => localStorage.removeItem(k))
-  loadTemplates(); loadRules(); loadRuns()
+  loadPresetTasks(); loadSubscriptions(); loadRuns()
   return {
     reset: true,
-    rules: SEED_RULES.length,
-    templates: SEED_TEMPLATES.length,
+    subscriptions: SEED_SUBSCRIPTIONS.length,
+    presetTasks: SEED_PRESET_TASKS.length,
   }
 }

@@ -3,7 +3,7 @@ import {
   App as AntApp, Button, Drawer, Form, Input, Select, Space, Table, Tag, Popconfirm, Empty,
 } from 'antd'
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import { api, TEMPLATE_STATUS_META, TRIGGER_MAP } from '@shared/api.js'
+import { api, EVENTS, PRESET_STATUS_META } from '@shared/api.js'
 import TriggerIcon from '@shared/components/TriggerIcon.jsx'
 
 const PROPOSER = '张开发'
@@ -18,7 +18,7 @@ export default function DeveloperPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await api.proposerTemplates(PROPOSER)
+      const r = await api.proposerPresetTasks(PROPOSER)
       setList(r.items)
     } catch (e) {
       message.error(e.message || '加载失败')
@@ -31,26 +31,23 @@ export default function DeveloperPage() {
 
   const openSubmit = () => {
     form.resetFields()
-    form.setFieldsValue({
-      trigger: 'email',
-      proposer: PROPOSER,
-    })
+    form.setFieldsValue({ eventId: EVENTS[0].id, proposer: PROPOSER })
     setDrawerOpen(true)
   }
 
   const onSubmit = async () => {
     const v = await form.validateFields()
-    const id = `tpl_${PROPOSER}_${v.name.replace(/[^\w]/g, '_')}_${Date.now().toString(36).slice(-4)}`
+    const id = `pt_${PROPOSER}_${v.name.replace(/[^\w\u4e00-\u9fa5]/g, '_')}_${Date.now().toString(36).slice(-4)}`
     try {
-      await api.submitTemplate({
+      await api.submitPresetTask({
         id,
+        eventId: v.eventId,
         name: v.name.trim(),
-        trigger: v.trigger,
         description: v.description?.trim() || '',
-        action: v.action.trim(),
+        actionPreview: v.actionPreview.trim(),
         proposer: v.proposer || PROPOSER,
       })
-      message.success('已提交模板，等待审核')
+      message.success('已提交预置任务，等待审核')
       setDrawerOpen(false)
       load()
     } catch (e) {
@@ -58,19 +55,19 @@ export default function DeveloperPage() {
     }
   }
 
-  const onDelete = async (tpl) => {
-    // Demo 静态版：直接调用通用删除不存在，所以改用本地移除：
-    setList((arr) => arr.filter((t) => t.id !== tpl.id))
+  // Demo 静态版：本地移除
+  const onRemove = (task) => {
+    setList((arr) => arr.filter((t) => t.id !== task.id))
     message.success('已移除（演示）')
   }
 
   const columns = [
     {
-      title: '模板',
+      title: '预置任务',
       dataIndex: 'name',
       render: (_, rec) => (
         <Space>
-          <TriggerIcon trigger={rec.trigger} size={32} />
+          <TriggerIcon event={rec.eventId} size={32} />
           <div>
             <div style={{ fontWeight: 600 }}>{rec.name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{rec.description}</div>
@@ -79,33 +76,37 @@ export default function DeveloperPage() {
       ),
     },
     {
-      title: '触发器',
-      dataIndex: 'trigger',
-      render: (t) => TRIGGER_MAP[t]?.name || t,
+      title: '事件',
+      dataIndex: 'eventName',
+      width: 180,
     },
     {
       title: '状态',
       dataIndex: 'status',
+      width: 100,
       render: (st) => {
-        const m = TEMPLATE_STATUS_META[st] || TEMPLATE_STATUS_META.pending_review
+        const m = PRESET_STATUS_META[st] || PRESET_STATUS_META.pending_review
         return <Tag color={m.color}>{m.label}</Tag>
       },
     },
     {
-      title: '启用数',
+      title: '订阅数',
       dataIndex: 'installs',
+      width: 90,
       render: (n) => n || 0,
     },
     {
       title: '提交时间',
       dataIndex: 'submittedAt',
+      width: 120,
       render: (t) => t ? new Date(t).toLocaleDateString('zh-CN') : '—',
     },
     {
       title: '操作',
       key: 'op',
+      width: 80,
       render: (_, rec) => (
-        <Popconfirm title="确认移除这条模板提案？" okText="移除" cancelText="取消" onConfirm={() => onDelete(rec)}>
+        <Popconfirm title="确认移除这条提案？" okText="移除" cancelText="取消" onConfirm={() => onRemove(rec)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
@@ -116,13 +117,13 @@ export default function DeveloperPage() {
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }} align="end">
         <div>
-          <h1 className="page-title">模板策划工作台</h1>
+          <h1 className="page-title">预置任务提案</h1>
           <p className="page-sub">
-            以开发者「{PROPOSER}」身份提交模板（触发器 × 默认动作） —— 通过审核后上架到公共模板市场，用户一键启用即可。
+            以「{PROPOSER}」身份为现有事件提交新的预置任务（事件 + 动作） — 管理员审核通过后上架到「事件市场」，用户即可一键订阅。
           </p>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={openSubmit}>
-          提交新模板
+          提交新预置任务
         </Button>
       </Space>
 
@@ -135,7 +136,7 @@ export default function DeveloperPage() {
         locale={{
           emptyText: (
             <Empty
-              description="还没有提交过模板 — 点右上角「提交新模板」，提案触发器×动作的组合"
+              description="还没有提交过预置任务 — 点右上角「提交新预置任务」，为某个事件提案一个动作"
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               style={{ padding: '24px 0' }}
             />
@@ -144,8 +145,8 @@ export default function DeveloperPage() {
       />
 
       <Drawer
-        title="提交新模板"
-        width={520}
+        title="提交新预置任务"
+        width={560}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         extra={
@@ -156,23 +157,31 @@ export default function DeveloperPage() {
         }
       >
         <Form form={form} layout="vertical" requiredMark="optional">
-          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="例如：关键客户邮件优先提醒" />
+          <Form.Item name="eventId" label="事件（已有的）" rules={[{ required: true, message: '请选择事件' }]}>
+            <Select
+              options={EVENTS.map((e) => ({ value: e.id, label: e.name }))}
+              optionRender={(o) => (
+                <Space>
+                  <TriggerIcon event={o.value} size={20} />
+                  <span>{o.label}</span>
+                </Space>
+              )}
+            />
           </Form.Item>
-          <Form.Item name="trigger" label="触发器" rules={[{ required: true }]}>
-            <Select options={Object.values(TRIGGER_MAP).map((t) => ({ value: t.id, label: t.name }))} />
+          <Form.Item name="name" label="预置任务名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input placeholder="例如：同步纪要给未参会人" />
           </Form.Item>
           <Form.Item name="description" label="简介（一句话）">
-            <Input placeholder="客户邮件 30 秒内提醒并 @ 相关同事" />
+            <Input placeholder="没参会的人也能拿到要点" />
           </Form.Item>
           <Form.Item
-            name="action"
-            label="默认动作（提示词）"
+            name="actionPreview"
+            label="动作预览（用户订阅时看到的「龙虾会主动…」）"
             rules={[{ required: true, message: '请填写动作内容' }]}
           >
             <Input.TextArea
-              autoSize={{ minRows: 4, maxRows: 10 }}
-              placeholder="例如：识别客户邮件关键字，30 秒内私聊推送并 @ 相关同事。"
+              autoSize={{ minRows: 4, maxRows: 8 }}
+              placeholder="例如：会后把纪要摘要发到部门群，标注「参与者 / 未参与者」"
             />
           </Form.Item>
           <Form.Item name="proposer" label="作者">
