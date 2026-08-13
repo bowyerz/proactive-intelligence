@@ -4,6 +4,11 @@ backend/.venv/
 __pycache__/
 *.pyc
 
+# 不提交 lockfile：本机为 Windows，生成的 package-lock.json 只含 win32 原生二进制
+# （@esbuild/win32-x64、@rollup/rollup-win32-x64-*），会导致 Linux CI 上 esbuild/rollup
+# 缺少对应平台的原生二进制而构建失败。改为 CI 每次用 npm install 在 runner 上重新解析。
+package-lock.json
+
 # 构建产物（由 CI 重新构建，无需提交）
 dist/
 

@@ -24,14 +24,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      # 注意：本仓库的 package-lock.json 在部分环境下会缺少 resolved/integrity 字段，
-      # 严格模式的 `npm ci` 会直接失败（exit 1）。改用 `npm install`：它会自动从 registry
-      # 解析依赖并补齐 lockfile，在 CI 环境中可正常安装与构建。
+      # 注意：本仓库不提交 package-lock.json。
+      # 原因：开发机是 Windows，生成的 lock 只记录 win32 原生二进制
+      #（@esbuild/win32-x64、@rollup/rollup-win32-x64-*），Linux runner 上会缺少
+      # 对应平台的原生二进制，导致 vite build 直接失败（exit 1）。
+      # 这里每次用 npm install 在 Linux runner 上重新解析，自动安装 linux 原生二进制。
       - run: npm install --no-audit --no-fund
-      # 构建两个子应用（user / manage）+ 拷贝入口门户到 dist 根
-      # 诊断：把构建错误作为 GitHub annotation 输出，便于无 token 时也能看到真实报错
+      # 构建两个子应用（user / manage）+ 拷贝入口门户到 dist 根。
+      # 诊断：把构建错误作为 GitHub annotation 输出，便于无 token 时也能看到真实报错。
       - name: Build (with error capture)
         run: |
           set -o pipefail
