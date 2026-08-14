@@ -1,7 +1,7 @@
 // 前端 API 层。Demo 部署为纯静态站点（GitHub Pages），所有请求由浏览器端
 // store.js 处理（数据在 localStorage），不依赖后端服务。
-// 接口对应 v5 模型：system_events × proposed_events × subscriptions（含用户自建 tasks[]）× runs。
-// （v5 起彻底删除 preset_tasks / bundledTasks：审核单位 = 事件，任务完全由用户自建）
+// 接口对应 v6 模型：用户端极简——只看到「任务」（事件仍是触发器，但用户端无感）。
+// 管理后台仍负责审核「事件提案」本身，开发者创建事件、用户自建任务。
 
 import * as store from './store.js'
 
@@ -31,7 +31,7 @@ export const api = {
     if (!e) throw new Error('事件不存在')
     return e
   }),
-  // 事件市场：系统事件 + 已上架的开发者提案事件
+  // 事件市场：系统事件 + 已上架的开发者提案事件（管理后台开发者/审核流程使用）
   listMarketEvents: () => wrap(() => store.listMarketEvents()),
 
   // 开发者提案的事件（管理后台的审核单位，**仅事件本身**）
@@ -44,14 +44,17 @@ export const api = {
   submitProposedEvent: (payload) => wrap(() => store.submitProposedEvent(payload)),
   proposerProposedEvents: (proposer) => wrap(() => store.proposerProposedEvents(proposer)),
 
-  // 订阅（v5：任务完全由用户自建，挂在 subscription.tasks[]）
+  // 订阅 / 任务（v6 用户端主入口）
   listSubscriptions: () => wrap(() => store.listSubscriptions()),
+  listCurrentTasks: () => wrap(() => store.listCurrentTasks()),
   getSubscription: (id) => wrap(() => {
     const s = store.getSubscription(id)
     if (!s) throw new Error('订阅不存在')
     return s
   }),
   createSubscription: (payload) => wrap(() => store.createSubscription(payload)),
+  // 与龙虾对话创建 —— 便捷入口（内部调用 createSubscription）
+  createTaskFromChat: (payload) => wrap(() => store.createTaskFromChat(payload || {})),
   updateSubscriptionTasks: (id, tasks) => wrap(() => store.updateSubscriptionTasks(id, tasks)),
   toggleSubscription: (id, enabled) => wrap(() => store.toggleSubscription(id, enabled)),
   deleteSubscription: (id) => wrap(() => store.deleteSubscription(id)),
@@ -59,7 +62,7 @@ export const api = {
   // 执行
   simulateRun: (id) => wrap(() => store.simulateRun(id)),
 
-  // 审核（v5：只审核「事件提案」本身，不审核任何任务）
+  // 审核（管理后台：只审核「事件提案」本身，不审核任何任务）
   reviewQueue: () => wrap(() => store.reviewQueue()),
   reviewProposedEvent: (id, body) => wrap(() => store.reviewProposedEvent(id, body)),
 

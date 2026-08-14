@@ -2,8 +2,12 @@
 // 数据持久化在 localStorage，所有交互为本地状态。
 //
 // =================================================================
-// v5 数据模型：事件是纯触发器，任务完全由用户在自己界面创建
+// v6 数据模型：用户端极简
 // =================================================================
+//
+// 用户看到的只有「任务」——一个任务 = 标题 + 频率描述 + 用户创建时定义的
+// 一条或多条动作 + 执行历史。任务的触发仍然是事件（系统事件 / 开发者提案
+// 事件），但用户端不再区分；在订阅里直接保存 frequencyText 给用户看。
 //
 // 系统事件（固定 2 个，不允许开发者改）：
 //   EVENTS               飞书日历来的 2 个原生事件（会议开始前 30 分钟 / 会议结束）
@@ -11,24 +15,22 @@
 // 开发者可创建（管理后台审核单位，**仅事件本身**，不再带任何任务）：
 //   PROPOSED_EVENTS      开发者提案的新事件（纯元数据：名称/来源/描述/清单/图标/配色）
 //                        状态：pending_review / active / rejected
-//                        active 后会上架到「事件市场」
 //
-// 用户订阅层（**任务完全用户自建**）：
+// 用户订阅层（v6 的核心简化）：
 //   SUBSCRIPTIONS        每个订阅挂在一个 eventId 下，订阅自带一组用户自己定义的任务 tasks[]
+//                        字段新增 frequencyText（给用户展示的频率文，如「每天 13:01」）和
+//                        runningSince（点击「立即执行」后未过 30s 视为执行中）
 //                        提交即启用（status='active', enabled=true），不再走任何审核
 //   RUNS                 订阅启用后，每次事件触发产出一条执行记录
 //
 // 关系：
 //   EVENTS          1 → N  SUBSCRIPTIONS
-//   PROPOSED_EVENTS (active 后) 视为事件市场的一员
+//   PROPOSED_EVENTS (active 后) 也作为可订阅的事件来源
 //   SUBSCRIPTION    通过 id 反查 RUNS
-//
-// 与 v4 的差别：彻底删除 PRESET_TASKS / bundledTasks；订阅不再引用预置任务，
-// 任务直接挂在 subscription.tasks[] 上，由用户在自己界面定义。
 
-const LS_PROPOSED_EVENTS = 'am_proposed_events_v5'
-const LS_SUBSCRIPTIONS = 'am_subscriptions_v5'
-const LS_RUNS = 'am_runs_v5'
+const LS_PROPOSED_EVENTS = 'am_proposed_events_v6'
+const LS_SUBSCRIPTIONS = 'am_subscriptions_v6'
+const LS_RUNS = 'am_runs_v6'
 
 export const DEMO_USER = 'demo_user'
 
@@ -98,73 +100,132 @@ const SEED_PROPOSED_EVENTS = [
 ]
 
 // 用户侧的订阅：任务完全用户自建（每个订阅自带一组用户定义的 tasks[]）
+// v6 SEED：5 条 sample 任务，匹配产品截图的「定时任务」列表
 const SEED_SUBSCRIPTIONS = [
   {
-    id: 'sub_demo_open_points',
-    eventId: 'meeting-start-30min',
-    name: '会议前的开场准备',
+    id: 'sub_demo_meeting1',
+    eventId: 'meeting-end',
+    name: '智能会议1·午间归档纪要与申请权限',
+    frequencyText: '每天 13:01',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_demo_open_points_1',
-        name: '生成我的开场要点',
-        description: '开会前先过一遍要点',
-        actionPreview: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
+        id: 'task_m1_1',
+        name: '执行 office-meeting-data-archiver 技能的同步模块',
+        description: '查询昨天和今天的会议列表，将会议信息自动写入多维表格，并自动申请会议纪要权限',
+        actionPreview: '查询昨天和今天的会议列表；将会议信息自动写入多维表格；自动申请会议纪要权限',
       },
     ],
+    runningSince: null,
     createdAt: '2026-08-01T10:00:00Z',
     updatedAt: '2026-08-01T10:00:00Z',
   },
   {
-    id: 'sub_demo_meeting_end',
+    id: 'sub_demo_meeting2',
     eventId: 'meeting-end',
-    name: '会后收尾',
+    name: '智能会议2·晚间归档纪要与申请权限',
+    frequencyText: '每天 21:00',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_demo_meeting_end_1',
-        name: '整理会议纪要',
-        description: '会后第一时间纪要',
-        actionPreview: '基于录音/笔记自动生成议题、结论、待办的结构化纪要',
-      },
-      {
-        id: 'task_demo_meeting_end_2',
-        name: '归档行动项',
-        description: '把待办归到我名下',
-        actionPreview: '提取所有 action item 的 owner + deadline，自动入我的待办',
+        id: 'task_m2_1',
+        name: '归档当日所有会议',
+        description: '晚上 21:00 把当天所有会议自动归档',
+        actionPreview: '汇总当天的会议纪要，自动归档到云文档',
       },
     ],
+    runningSince: null,
     createdAt: '2026-08-02T10:00:00Z',
     updatedAt: '2026-08-02T10:00:00Z',
   },
   {
-    id: 'sub_demo_draft',
+    id: 'sub_demo_meeting3',
     eventId: 'meeting-end',
-    name: '草稿（暂未启用）',
-    enabled: false,
+    name: '智能会议3·日度会议数据回顾（需补充会议标签）',
+    frequencyText: '每天 14:17',
+    enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
-    tasks: [],
+    tasks: [
+      {
+        id: 'task_m3_1',
+        name: '日度会议数据回顾',
+        description: '每天下午回顾当日已开会议的数据',
+        actionPreview: '拉取当日会议数据 → 输出回顾短报告',
+      },
+    ],
+    runningSince: null,
     createdAt: '2026-08-03T10:00:00Z',
     updatedAt: '2026-08-03T10:00:00Z',
+  },
+  {
+    id: 'sub_demo_meeting4',
+    eventId: 'meeting-end',
+    name: '智能会议4·周度报告推送与会议洞察（需补充会议标签）',
+    frequencyText: '每逢周日 18:48',
+    enabled: true,
+    status: 'active',
+    proposer: '我',
+    creator: DEMO_USER,
+    tasks: [
+      {
+        id: 'task_m4_1',
+        name: '周度报告推送与会议洞察',
+        description: '每周日 18:48 推送上周会议洞察',
+        actionPreview: '汇总上周所有会议 → 生成洞察 → 推送到群里',
+      },
+    ],
+    runningSince: null,
+    createdAt: '2026-08-04T10:00:00Z',
+    updatedAt: '2026-08-04T10:00:00Z',
+  },
+  {
+    id: 'sub_demo_weight_loss',
+    eventId: 'meeting-end',
+    name: 'weight-loss-weekly-report',
+    frequencyText: '每逢周一 09:00',
+    enabled: true,
+    status: 'active',
+    proposer: '我',
+    creator: DEMO_USER,
+    tasks: [
+      {
+        id: 'task_w_1',
+        name: '本周体重周报',
+        description: '汇总本周体重变化并推送周报',
+        actionPreview: '从表格读取本周体重 → 生成周报 → 发送',
+      },
+    ],
+    runningSince: null,
+    createdAt: '2026-08-05T10:00:00Z',
+    updatedAt: '2026-08-05T10:00:00Z',
   },
 ]
 
 // 各订阅的执行历史
+// v6：为 sub_demo_meeting1 准备 10 条样本执行（匹配详情页截图的 100% / 197s / 60K 概览）
 const SEED_RUNS = [
-  { id: 'run_seed_1', ruleId: 'sub_demo_open_points', timestamp: '2026-08-12T14:30:00Z', status: 'success', tokens: 30000, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
-  { id: 'run_seed_2', ruleId: 'sub_demo_open_points', timestamp: '2026-08-11T14:30:00Z', status: 'success', tokens: 28500, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
-  { id: 'run_seed_3', ruleId: 'sub_demo_open_points', timestamp: '2026-08-08T14:30:00Z', status: 'success', tokens: 32700, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
-  { id: 'run_seed_4', ruleId: 'sub_demo_meeting_end', timestamp: '2026-08-12T11:00:00Z', status: 'success', tokens: 41200, summary: '「会后收尾」已执行 2 项任务：整理会议纪要、归档行动项' },
-  { id: 'run_seed_5', ruleId: 'sub_demo_meeting_end', timestamp: '2026-08-10T16:00:00Z', status: 'success', tokens: 36800, summary: '「会后收尾」已执行 2 项任务：整理会议纪要、归档行动项' },
-  { id: 'run_seed_6', ruleId: 'sub_demo_meeting_end', timestamp: '2026-08-07T17:00:00Z', status: 'success', tokens: 38900, summary: '「会后收尾」已执行 2 项任务：整理会议纪要、归档行动项' },
+  { id: 'run_m1_1', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-13T13:10:05Z', status: 'success', tokens: 64719, durationSec: 156, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_2', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-12T13:09:15Z', status: 'success', tokens: 58246, durationSec: 106, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_3', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-11T13:10:20Z', status: 'success', tokens: 62379, durationSec: 171, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_4', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-10T11:57:09Z', status: 'success', tokens: 56059, durationSec: 69, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_5', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-09T11:57:20Z', status: 'success', tokens: 55058, durationSec: 40, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_6', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-08T11:57:57Z', status: 'success', tokens: 62406, durationSec: 88, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_7', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-07T11:59:14Z', status: 'success', tokens: 61746, durationSec: 165, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_8', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-06T12:01:11Z', status: 'success', tokens: 63021, durationSec: 210, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_9', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-05T11:55:48Z', status: 'success', tokens: 60987, durationSec: 250, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  { id: 'run_m1_10', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-04T11:56:02Z', status: 'success', tokens: 59832, durationSec: 180, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
+  // 历史：meeting1 一条最早跑过；其他 4 条订阅尚未触发过（匹配截图的「暂无记录」）
+  { id: 'run_seed_old1', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-02T11:50:00Z', status: 'success', tokens: 56000, summary: '首次启用：已执行' },
+  { id: 'run_seed_old_meet', ruleId: 'sub_demo_open_points', timestamp: '2026-08-12T14:30:00Z', status: 'success', tokens: 30000, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
+  { id: 'run_seed_old_meet2', ruleId: 'sub_demo_open_points', timestamp: '2026-08-11T14:30:00Z', status: 'success', tokens: 28500, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
 ]
 
 // ============== 工具 ==============
@@ -181,10 +242,8 @@ function loadOrInit(key, seed) {
   return fresh
 }
 
-// v4 → v5 一次性迁移：
-//   PROPOSED_EVENTS  v4 带 bundledTasks → 去掉即可
-//   SUBSCRIPTIONS / PRESET_TASKS  v5 模型变了（订阅不再引用预置任务，任务用户自建），
-//                                  旧数据直接丢弃，从 v5 seed 重新初始化
+// 一次性迁移：把更早版本的 LS key 收尾 / 升级
+// v4 → v5：剥 bundledTasks；v5 → v6：seed 改了，强制刷新 subs + runs
 function migrateFromV4() {
   const v4pe = localStorage.getItem('am_proposed_events_v4')
   if (v4pe && !localStorage.getItem(LS_PROPOSED_EVENTS)) {
@@ -197,8 +256,9 @@ function migrateFromV4() {
       localStorage.removeItem('am_proposed_events_v4')
     } catch (e) { /* ignore */ }
   }
-  // v5 不再用 v4 这些 key，直接清掉
   ;['am_subscriptions_v4', 'am_preset_tasks_v4', 'am_runs_v4'].forEach((k) => localStorage.removeItem(k))
+  // v5 subs/runs seed 已被 v6 替换；旧 v5 数据丢弃，从 v6 seed 重新初始化
+  ;['am_subscriptions_v5', 'am_runs_v5'].forEach((k) => localStorage.removeItem(k))
 }
 
 function loadProposedEvents() {
@@ -214,9 +274,17 @@ function saveSubscriptions(arr) { localStorage.setItem(LS_SUBSCRIPTIONS, JSON.st
 function loadRuns() { return loadOrInit(LS_RUNS, SEED_RUNS) }
 function saveRuns(arr) { localStorage.setItem(LS_RUNS, JSON.stringify(arr)) }
 
-// 装饰：subscription 附上 event 元数据 + 状态
+// 装饰：subscription 附上 event 元数据 + 状态 + 计算字段（lastRunAt / isRunning）
 function decorateSubscription(sub) {
   const ev = EVENT_MAP[sub.eventId] || loadProposedEvents().find((e) => e.id === sub.eventId)
+  // 该订阅最近一次执行
+  const runs = loadRuns().filter((r) => r.ruleId === sub.id)
+  const lastRun = runs
+    .slice()
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0] || null
+  // v6：runningSince 在 60s 内视为「执行中」（用于「当前任务」Tab）
+  const runningSince = sub.runningSince ? String(sub.runningSince) : null
+  const isRunning = runningSince ? (Date.now() - new Date(runningSince).getTime() < 60 * 1000) : false
   return {
     ...sub,
     eventName: ev?.name || sub.eventId,
@@ -228,6 +296,12 @@ function decorateSubscription(sub) {
     eventChecklist: ev?.checklist || '',
     statusMeta: SUB_STATUS_META[sub.status] || SUB_STATUS_META.active,
     taskCount: (sub.tasks || []).length,
+    // 给 UI 用的便利字段
+    frequencyText: sub.frequencyText || ev?.name || '未设置',
+    lastRunAt: lastRun ? lastRun.timestamp : null,
+    lastRunStatus: lastRun ? lastRun.status : null,
+    runningSince,
+    isRunning,
   }
 }
 
@@ -344,10 +418,50 @@ export function getSubscription(id) {
   const s = loadSubscriptions().find((x) => x.id === id)
   if (!s) return null
   const out = decorateSubscription(s)
-  out.runs = loadRuns()
+  const runs = loadRuns()
     .filter((run) => run.ruleId === id)
     .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+  out.runs = runs
+  // 详情页顶部统计：成功率 / 平均耗时 / 平均 Token（最近 10 次）
+  const recent = runs.slice(0, 10)
+  if (recent.length > 0) {
+    const successCount = recent.filter((r) => r.status === 'success').length
+    const totalDuration = recent.reduce((s, r) => s + (r.durationSec || 0), 0)
+    const totalTokens = recent.reduce((s, r) => s + (r.tokens || 0), 0)
+    out.stats = {
+      runCount: recent.length,
+      successRate: recent.length === 0 ? 0 : (successCount / recent.length) * 100,
+      avgDuration: Math.round(totalDuration / recent.length),
+      avgTokens: Math.round(totalTokens / recent.length / 100) / 10, // K
+    }
+  } else {
+    out.stats = { runCount: 0, successRate: 0, avgDuration: 0, avgTokens: 0 }
+  }
   return out
+}
+
+// 列出「当前任务」——包括：执行中的订阅 (runningSince 60s 内) +
+// 最近 60s 内刚跑完的订阅（lastRunAt 60s 内）。给 user/当前任务 Tab 用。
+export function listCurrentTasks() {
+  const now = Date.now()
+  const arr = loadSubscriptions()
+  const runs = loadRuns()
+  const matches = arr.filter((s) => {
+    if (s.runningSince) {
+      const t = new Date(s.runningSince).getTime()
+      if (!Number.isNaN(t) && now - t < 60 * 1000) return true
+    }
+    // 最近 60s 内跑过
+    const lastRun = runs
+      .filter((r) => r.ruleId === s.id)
+      .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0]
+    if (lastRun) {
+      const t = new Date(lastRun.timestamp).getTime()
+      if (!Number.isNaN(t) && now - t < 60 * 1000) return true
+    }
+    return false
+  })
+  return matches.map(decorateSubscription)
 }
 
 // 创建订阅：必传 eventId + 用户自建的 tasks[]（提交即启用，不走审核）
@@ -371,6 +485,8 @@ export function createSubscription(payload) {
     id,
     eventId: payload.eventId,
     name: (payload.name || '').trim() || ev.name,
+    // v6 用户端新字段
+    frequencyText: (payload.frequencyText || '').trim() || ev.name,
     enabled: true,
     status: 'active',
     proposer: '我',
@@ -381,6 +497,7 @@ export function createSubscription(payload) {
       description: (t.description || '').trim(),
       actionPreview: t.actionPreview.trim(),
     })),
+    runningSince: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -426,23 +543,48 @@ export function deleteSubscription(id) {
 
 // ============== 执行 ==============
 
+// 模拟一次「立即执行」——v6：设置 runningSince → 60s 内视为执行中；
+// 同时立即落库一条 run 记录（status=success, 带真实时长），
+// 这样点击后能在「执行记录」立刻看到效果。
 export function simulateRun(subscriptionId) {
-  const s = loadSubscriptions().find((x) => x.id === subscriptionId)
-  if (!s) throw new Error('订阅不存在')
+  const arrSubs = loadSubscriptions()
+  const idx = arrSubs.findIndex((x) => x.id === subscriptionId)
+  if (idx < 0) throw new Error('订阅不存在')
+  const s = arrSubs[idx]
   if (!s.enabled) throw new Error('订阅未启用')
 
+  const now = new Date().toISOString()
+  // 标记执行中（60s 内 UI 显示「执行中…」）
+  arrSubs[idx] = { ...s, runningSince: now }
+  saveSubscriptions(arrSubs)
+
+  const durationSec = 30 + Math.floor(Math.random() * 60) // 30~90s
+  const tokens = 30000 + Math.floor(Math.random() * 30000)
   const run = {
     id: `run_${Date.now()}`,
     ruleId: subscriptionId,
-    timestamp: new Date().toISOString(),
+    timestamp: now,
     status: 'success',
-    tokens: 30000 + Math.floor(Math.random() * 30000),
-    summary: summarizeFor(s),
+    tokens,
+    durationSec,
+    summary: summarizeFor(arrSubs[idx]),
   }
-  const arr = loadRuns()
-  arr.push(run)
-  saveRuns(arr)
+  const arrRuns = loadRuns()
+  arrRuns.push(run)
+  saveRuns(arrRuns)
   return run
+}
+
+// 模拟聊天创建：直接生成一个新订阅（用户口吻自然语言 → 由龙虾「解读」）
+export function createTaskFromChat({ name, frequencyText, eventId, tasks }) {
+  return createSubscription({
+    eventId: eventId || 'meeting-end',
+    name: (name || '').trim(),
+    frequencyText: (frequencyText || '').trim(),
+    tasks: Array.isArray(tasks) && tasks.length > 0 ? tasks : [
+      { name: name || '新任务', description: '', actionPreview: '由龙虾解读' },
+    ],
+  })
 }
 
 function summarizeFor(s) {
@@ -502,6 +644,7 @@ export function resetDemo() {
   ;[
     LS_PROPOSED_EVENTS, LS_SUBSCRIPTIONS, LS_RUNS,
     'am_preset_tasks_v4', 'am_proposed_events_v4', 'am_subscriptions_v4', 'am_runs_v4',
+    'am_subscriptions_v5', 'am_runs_v5',
     'am_triggers_v1', 'am_templates_v2', 'am_rules_v2', 'am_runs_v2',
     'am_events_v1', 'am_subs_v1',
     'am_events_v3', 'am_preset_tasks_v3', 'am_subscriptions_v3', 'am_runs_v3',
