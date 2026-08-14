@@ -84,7 +84,6 @@ export default function App() {
       <div className="ua-page-head">
           <div className="ua-page-title">
           任务中心
-          <span className="ua-page-tag">v8 · 事件触发</span>
         </div>
       </div>
       <div className="ua-tabs">
