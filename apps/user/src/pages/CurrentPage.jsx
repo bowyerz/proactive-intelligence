@@ -57,7 +57,7 @@ export default function CurrentPage({ refreshTick, onOpenDetail, onChanged }) {
                   <ArrowRightOutlined className="ua-task-arrow" />
                 </div>
                 <div className="ua-task-meta">
-                  <span><span className="ua-meta-key">频率:</span> <span className="ua-meta-val">{sub.frequencyText || '未设置'}</span></span>
+                  <span><span className="ua-meta-key">触发事件:</span> <span className="ua-meta-val">{sub.triggerText || '未设置'}</span></span>
                   <span><span className="ua-meta-key">最近触发:</span> <span className="ua-meta-val">{formatTimeAgo(sub.lastRunAt || sub.runningSince)}</span></span>
                 </div>
               </div>

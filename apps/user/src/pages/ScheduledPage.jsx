@@ -4,8 +4,8 @@ import { ArrowRightOutlined, LoadingOutlined } from '@ant-design/icons'
 import { api } from '@shared/api.js'
 
 /**
- * 定时任务列表 —— 默认页签。
- * 列：标题 / 执行周期 / 上次执行 / 启用开关
+ * 事件任务列表 —— 默认页签。
+ * 列：标题 / 触发事件 / 上次执行 / 启用开关
  */
 export default function ScheduledPage({ refreshTick, onOpenDetail, onChanged }) {
   const { message, modal } = AntApp.useApp()
@@ -102,7 +102,7 @@ function TaskRow({ sub, onClick, onToggle }) {
           <ArrowRightOutlined className="ua-task-arrow" />
         </div>
         <div className="ua-task-meta">
-          <span><span className="ua-meta-key">执行周期:</span> <span className="ua-meta-val">{sub.frequencyText || '未设置'}</span></span>
+          <span><span className="ua-meta-key">触发事件:</span> <span className="ua-meta-val">{sub.triggerText || '未设置'}</span></span>
           <span><span className="ua-meta-key">上次执行:</span> <span className="ua-meta-val">{lastRunText}</span></span>
         </div>
       </div>

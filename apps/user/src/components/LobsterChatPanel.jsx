@@ -5,7 +5,9 @@ import { api } from '@shared/api.js'
 
 /**
  * 底部抽屉：与龙虾对话。
- * 体验：龙虾招呼 → 5 个预设意图 chip → 用户自由输入 → 选中后自动创建任务。
+ * 体验：龙虾招呼 → 5 个预设意图 chip → 用户自由输入 → 选中后自动创建「事件任务」。
+ * 事件触发模型：任务绑定在 2 个固定事件之一（会议开始前30分钟 / 会议结束），
+ * 事件触发时龙虾自动执行，用户端没有「定时 / cron」概念。
  */
 export default function LobsterChatPanel({ onClose, onCreated }) {
   const { message } = AntApp.useApp()
@@ -19,7 +21,7 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
     setMessages([
       {
         role: 'lobster',
-        text: '你好！我是龙虾 🦞\n告诉我你想做什么样的定时任务，我会帮你拆解成「事件 + 任务」一键创建。',
+        text: '你好！我是龙虾 🦞\n告诉我你想在哪个「会议事件」发生后让龙虾做什么，我会帮你拆成「事件 + 任务」一键创建。\n例如：会前帮我准备开场要点、会后自动写纪要。',
       },
     ])
   }, [])
@@ -34,9 +36,8 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
   }
 
   // 用户输入：先 push 用户 bubble，再走一个伪「思考」，再决定：
-  //   1) 命中预设 chip → 直接创建任务
-  //   2) 命中启发式解析（每天 HH:MM / 每逢周X HH:MM / 等等）→ 创建
-  //   3) 否则 → 创建一个以输入文本为标题的默认任务
+  //   1) 命中预设 chip → 直接创建（带事件绑定）
+  //   2) 否则 → 按「会前 / 会后」关键词映射到 2 个事件创建
   const handleUserInput = async (raw) => {
     setMessages((prev) => [...prev, { role: 'user', text: raw }])
     setBusy(true)
@@ -48,23 +49,10 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
     }
 
     const parsed = parseFreeText(raw)
-    if (parsed) {
-      await createFromPreset(parsed)
-      setBusy(false); return
-    }
-
-    // 兜底：以原文做任务名，频率用「未设置」
     setTimeout(async () => {
       try {
-        const sub = await api.createTaskFromChat({
-          name: raw,
-          frequencyText: '未设置',
-          eventId: 'meeting-end',
-          tasks: [{ name: raw, description: '从龙虾对话创建', actionPreview: '由龙虾解读并执行' }],
-        })
-        setMessages((prev) => [...prev, { role: 'lobster', text: `已为你创建任务「${sub.name}」。点首页列表即可查看。` }])
-        message.success('已创建')
-        setTimeout(() => onCreated?.(), 800)
+        await createFromParsed(parsed, raw)
+        setBusy(false)
       } catch (e) {
         setMessages((prev) => [...prev, { role: 'lobster', text: `创建失败：${e.message || '未知错误'}` }])
         message.error(e.message || '创建失败')
@@ -76,24 +64,15 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
   const createFromPreset = async (preset) => {
     setTimeout(async () => {
       try {
-        // 让龙虾「回一句」显得聪明
-        setMessages((prev) => [...prev, {
-          role: 'lobster',
-          text: preset.replyText,
-        }])
+        setMessages((prev) => [...prev, { role: 'lobster', text: preset.replyText }])
         await api.createTaskFromChat({
           name: preset.taskName,
-          frequencyText: preset.frequencyText,
           eventId: preset.eventId,
-          tasks: [{
-            name: preset.taskName,
-            description: preset.taskDesc,
-            actionPreview: preset.actionPreview,
-          }],
+          tasks: [{ name: preset.taskName, description: preset.taskDesc, actionPreview: preset.actionPreview }],
         })
         setMessages((prev) => [...prev, {
           role: 'lobster',
-          text: `✅ 任务「${preset.taskName}」已创建，立即启用。`,
+          text: `✅ 事件任务「${preset.taskName}」已创建，立即启用。会议事件触发时龙虾会自动执行。`,
         }])
         message.success('已创建并启用')
         setTimeout(() => onCreated?.(), 1000)
@@ -104,6 +83,21 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
         setBusy(false)
       }
     }, 700)
+  }
+
+  const createFromParsed = async (parsed, raw) => {
+    setMessages((prev) => [...prev, { role: 'lobster', text: parsed.replyText }])
+    await api.createTaskFromChat({
+      name: parsed.taskName,
+      eventId: parsed.eventId,
+      tasks: [{ name: parsed.taskName, description: parsed.taskDesc, actionPreview: parsed.actionPreview }],
+    })
+    setMessages((prev) => [...prev, {
+      role: 'lobster',
+      text: `✅ 事件任务已创建，立即启用。绑定到「${parsed.eventName}」，触发时龙虾会自动执行。`,
+    }])
+    message.success('已创建并启用')
+    setTimeout(() => onCreated?.(), 1000)
   }
 
   return (
@@ -134,7 +128,7 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onPressEnter={() => send(input)}
-          placeholder="跟我说说想做的任务，例如：「每天 13:00 总结昨天会议」"
+          placeholder="跟我说说想做的任务，例如：「会前帮我准备开场要点」"
           disabled={busy}
         />
         <Button
@@ -148,87 +142,68 @@ export default function LobsterChatPanel({ onClose, onCreated }) {
   )
 }
 
-// ============== 预设意图 ==============
+// ============== 预设意图（事件触发，绑定 2 个固定事件） ==============
 const PRESET_CHIPS = [
   {
-    label: '每天 13:01 归档会议',
-    frequencyText: '每天 13:01',
-    taskName: '智能会议·午间归档纪要与申请权限',
-    taskDesc: '归档昨日 + 今日会议；自动申请会议纪要权限',
-    actionPreview: '查询昨天和今天的会议列表；将会议信息自动写入多维表格；自动申请会议纪要权限',
-    eventId: 'meeting-end',
-    replyText: '好的！每天 13:01 自动归档会议 → 把会议信息入到多维表格。',
+    label: '会前帮我准备开场要点',
+    taskName: '会议前·开场要点',
+    taskDesc: '开会前先过一遍要点',
+    actionPreview: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
+    eventId: 'meeting-start-30min',
+    replyText: '好的！绑定到「会议开始前 30 分钟」事件，会前自动给你整理开场要点。',
   },
   {
-    label: '每天 21:00 晚间归档',
-    frequencyText: '每天 21:00',
-    taskName: '智能会议·晚间归档纪要与申请权限',
-    taskDesc: '晚间把当天会议全部归档',
-    actionPreview: '汇总当天的会议纪要，自动归档到云文档',
-    eventId: 'meeting-end',
-    replyText: '好！21:00 把今天的会议全部归档，方便明天早上直接看。',
+    label: '会前预读议程与背景',
+    taskName: '会议前·议程预读',
+    taskDesc: '会前把议程与背景读一遍',
+    actionPreview: '读取本次会议议程 + 参会人历史会议，输出背景速览',
+    eventId: 'meeting-start-30min',
+    replyText: '收到！会前自动预读议程与参会人背景。',
   },
   {
-    label: '每天 14:17 日度回顾',
-    frequencyText: '每天 14:17',
-    taskName: '智能会议·日度会议数据回顾',
-    taskDesc: '拉取当日已开会议，生成回顾短报告',
-    actionPreview: '统计当日已开会议的数据；输出关键结论、待办、风险',
+    label: '会后自动写纪要',
+    taskName: '会议后·自动纪要',
+    taskDesc: '会后第一时间出纪要',
+    actionPreview: '基于会议录音/笔记自动生成议题、结论、待办的结构化纪要',
     eventId: 'meeting-end',
-    replyText: '理解！每天下午 14:17 出一份当日会议回顾短报告。',
+    replyText: '好！「会议结束」后自动帮你整理结构化纪要。',
   },
   {
-    label: '每周日 18:48 周报',
-    frequencyText: '每逢周日 18:48',
-    taskName: '智能会议·周度报告推送与会议洞察',
-    taskDesc: '汇总上周会议 → 生成洞察 → 推送',
-    actionPreview: '汇总上周所有会议 → 输出洞察要点 → 推送给我',
+    label: '会后归档行动项',
+    taskName: '会议后·行动项归档',
+    taskDesc: '把会议待办归到我名下',
+    actionPreview: '提取所有 action item 的 owner + deadline，自动写入我的待办',
     eventId: 'meeting-end',
-    replyText: 'OK，每周日 18:48 自动生成上周会议洞察并推送。',
+    replyText: '明白！会后自动提取行动项并归档到你的待办。',
   },
   {
-    label: '每周一 09:00 体重周报',
-    frequencyText: '每逢周一 09:00',
-    taskName: 'weight-loss-weekly-report',
-    taskDesc: '汇总本周体重并推送周报',
-    actionPreview: '从体重多维表格读取本周数据 → 生成周报 → 推送到我的邮箱',
+    label: '会后收集周报素材',
+    taskName: '会议后·周报素材',
+    taskDesc: '为周报自动攒素材',
+    actionPreview: '汇总本周所有会议的关键结论，生成周报草稿素材',
     eventId: 'meeting-end',
-    replyText: '好！每周一早 09:00 自动汇总体重周报。',
+    replyText: 'OK！每次会议结束帮你攒好周报素材。',
   },
 ]
 
-// 极简启发式解析——识别"每天 HH:MM"、"每周X HH:MM"、"每逢周X HH:MM"等
-function parseFreeText(text) {
+// 自由文本：不再解析定时器；统一按「会前 / 会后」关键词映射到 2 个固定事件
+function resolveEvent(text) {
   const t = text.replace(/\s+/g, '')
-  // 每天 HH:MM
-  const m1 = t.match(/^每天(\d{1,2}):(\d{2})(.*)$/)
-  if (m1) {
-    const hh = m1[1].padStart(2, '0'), mm = m1[2]
-    const rest = m1[3] || '自动任务'
-    return {
-      label: text,
-      frequencyText: `每天 ${hh}:${mm}`,
-      taskName: rest.length > 1 ? rest : `每天 ${hh}:${mm} 定时任务`,
-      taskDesc: `由龙虾对话创建 — ${text}`,
-      actionPreview: `每天 ${hh}:${mm} 龙虾主动执行`,
-      eventId: 'meeting-end',
-      replyText: `好的！固定为每天 ${hh}:${mm} 触发。`,
-    }
+  if (/会前|开场|预读|议程|准备|之前|前30|提前|会前30/.test(t)) return 'meeting-start-30min'
+  return 'meeting-end'
+}
+
+function parseFreeText(text) {
+  const eventId = resolveEvent(text)
+  const eventName = eventId === 'meeting-start-30min' ? '会议开始前 30 分钟' : '会议结束'
+  const taskName = text.length > 1 ? text : `${eventName}自动任务`
+  return {
+    label: text,
+    taskName,
+    taskDesc: `由龙虾对话创建 — ${text}`,
+    actionPreview: `事件「${eventName}」触发时，龙虾主动执行`,
+    eventId,
+    eventName,
+    replyText: `好的！已绑定到「${eventName}」事件，触发时龙虾自动执行。`,
   }
-  // 每周X / 周X HH:MM
-  const m2 = t.match(/^(每[周逢]?周([一二三四五六日天])(\d{1,2}):(\d{2}))(.*)$/)
-  if (m2) {
-    const wk = m2[2], hh = m2[3].padStart(2, '0'), mm = m2[4]
-    const rest = m2[5] || '周任务'
-    return {
-      label: text,
-      frequencyText: `每逢周${wk} ${hh}:${mm}`,
-      taskName: rest.length > 1 ? rest : `周${wk} ${hh}:${mm} 定时任务`,
-      taskDesc: `由龙虾对话创建 — ${text}`,
-      actionPreview: `每逢周${wk} ${hh}:${mm} 龙虾主动执行`,
-      eventId: 'meeting-end',
-      replyText: `好的！固定为每逢周${wk} ${hh}:${mm} 触发。`,
-    }
-  }
-  return null
 }

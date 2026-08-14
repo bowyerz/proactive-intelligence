@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  App as AntApp, Button, Modal, Form, Input,
+  App as AntApp, Button, Modal, Form, Input, Select,
   Popconfirm,
 } from 'antd'
 import {
@@ -94,7 +94,7 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
   const startEdit = () => {
     editForm.setFieldsValue({
       name: sub.name,
-      frequencyText: sub.frequencyText,
+      eventId: sub.eventId,
       taskName: sub.tasks?.[0]?.name || '',
       taskDescription: sub.tasks?.[0]?.description || '',
       taskAction: sub.tasks?.[0]?.actionPreview || '',
@@ -118,7 +118,7 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
       // name / frequencyText：调底层 store 没有暴露；我们用 createSubscription 不合适
       // —— 直接走 toggleSubscription(id, ...) 不行。
       // 临时方案：覆写整个订阅。我们直接调用 store 子方法不暴露，所以这里走手动 setItem 简易版：
-      patchSubscriptionMeta(id, { name: vals.name, frequencyText: vals.frequencyText })
+      patchSubscriptionMeta(id, { name: vals.name, eventId: vals.eventId })
       message.success('已保存')
       setEditing(false)
       load(); onChanged?.()
@@ -146,6 +146,11 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
 
       <div className="ua-detail-body">
         <h1 className="ua-detail-h1">{sub.name}</h1>
+
+        <div className="ua-detail-trigger">
+          <span className="ua-trigger-dot" style={{ background: sub.eventColor }} />
+          触发事件：{sub.eventName}
+        </div>
 
         {desc && (
           <div className="ua-detail-desc">
@@ -215,8 +220,13 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
           <Form.Item label="任务名" name="name" rules={[{ required: true, message: '请填写' }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="执行周期（展示用）" name="frequencyText">
-            <Input placeholder="例如：每天 13:01" />
+          <Form.Item label="触发事件" name="eventId" rules={[{ required: true, message: '请选择触发事件' }]}>
+            <Select
+              options={[
+                { value: 'meeting-start-30min', label: '会议开始前 30 分钟' },
+                { value: 'meeting-end', label: '会议结束' },
+              ]}
+            />
           </Form.Item>
           <Form.Item label="任务动作" name="taskName" rules={[{ required: true, message: '请填写' }]}>
             <Input />
@@ -283,11 +293,11 @@ function formatTs(ts) {
 }
 
 /**
- * 直接覆盖订阅的 name / frequencyText。
+ * 直接覆盖订阅的 name / eventId。
  * 没专门暴露 updateSubscriptionMeta，所以在用户端本地直接打补丁。
  */
 function patchSubscriptionMeta(id, patch) {
-  const LS = 'am_subscriptions_v6'
+  const LS = 'am_subscriptions_v7'
   try {
     const raw = localStorage.getItem(LS)
     if (!raw) return

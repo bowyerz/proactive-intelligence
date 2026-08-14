@@ -82,9 +82,9 @@ export default function App() {
 
       {/* ===== 页面标题 + Tab ===== */}
       <div className="ua-page-head">
-        <div className="ua-page-title">
+          <div className="ua-page-title">
           任务中心
-          <span className="ua-page-tag">v6 · 与龙虾对话创建</span>
+          <span className="ua-page-tag">v7 · 事件触发</span>
         </div>
       </div>
       <div className="ua-tabs">
@@ -92,7 +92,7 @@ export default function App() {
           className={`ua-tab ${activeTab === 'scheduled' ? 'active' : ''}`}
           onClick={() => setActiveTab('scheduled')}
         >
-          定时任务
+          事件任务
         </div>
         <div
           className={`ua-tab ${activeTab === 'current' ? 'active' : ''}`}
@@ -120,7 +120,7 @@ export default function App() {
       {/* ===== 浮动 Pill：与龙虾对话 ===== */}
       <div className="ua-chat-pill" onClick={() => setChatOpen(true)}>
         <span className="ua-pill-emoji">💬</span>
-        与龙虾对话，创建定时任务
+        与龙虾对话，创建事件任务
         <span className="ua-pill-caret">~</span>
       </div>
 

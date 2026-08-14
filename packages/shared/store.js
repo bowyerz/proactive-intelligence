@@ -2,12 +2,12 @@
 // 数据持久化在 localStorage，所有交互为本地状态。
 //
 // =================================================================
-// v6 数据模型：用户端极简
+// v7 数据模型：用户端极简 + 事件触发
 // =================================================================
 //
-// 用户看到的只有「任务」——一个任务 = 标题 + 频率描述 + 用户创建时定义的
-// 一条或多条动作 + 执行历史。任务的触发仍然是事件（系统事件 / 开发者提案
-// 事件），但用户端不再区分；在订阅里直接保存 frequencyText 给用户看。
+// 用户看到的是「事件任务」——每个任务绑定在 2 个固定事件之一下
+// （会议开始前 30 分钟 / 会议结束）。事件一旦触发（来自飞书日历），
+// 龙虾就自动执行该任务下的动作。用户端没有「定时 / cron」概念，全部由事件驱动。
 //
 // 系统事件（固定 2 个，不允许开发者改）：
 //   EVENTS               飞书日历来的 2 个原生事件（会议开始前 30 分钟 / 会议结束）
@@ -28,9 +28,9 @@
 //   PROPOSED_EVENTS (active 后) 也作为可订阅的事件来源
 //   SUBSCRIPTION    通过 id 反查 RUNS
 
-const LS_PROPOSED_EVENTS = 'am_proposed_events_v6'
-const LS_SUBSCRIPTIONS = 'am_subscriptions_v6'
-const LS_RUNS = 'am_runs_v6'
+const LS_PROPOSED_EVENTS = 'am_proposed_events_v7'
+const LS_SUBSCRIPTIONS = 'am_subscriptions_v7'
+const LS_RUNS = 'am_runs_v7'
 
 export const DEMO_USER = 'demo_user'
 
@@ -100,23 +100,23 @@ const SEED_PROPOSED_EVENTS = [
 ]
 
 // 用户侧的订阅：任务完全用户自建（每个订阅自带一组用户定义的 tasks[]）
-// v6 SEED：5 条 sample 任务，匹配产品截图的「定时任务」列表
+// 订阅挂在 2 个固定事件之一下（会议开始前30分钟 / 会议结束）；事件触发 → 龙虾自动执行。
+// v7 SEED：5 条示例「事件触发任务」，分别绑定到两个事件。
 const SEED_SUBSCRIPTIONS = [
   {
-    id: 'sub_demo_meeting1',
-    eventId: 'meeting-end',
-    name: '智能会议1·午间归档纪要与申请权限',
-    frequencyText: '每天 13:01',
+    id: 'sub_meeting_start_points',
+    eventId: 'meeting-start-30min',
+    name: '会议前·开场要点',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_m1_1',
-        name: '执行 office-meeting-data-archiver 技能的同步模块',
-        description: '查询昨天和今天的会议列表，将会议信息自动写入多维表格，并自动申请会议纪要权限',
-        actionPreview: '查询昨天和今天的会议列表；将会议信息自动写入多维表格；自动申请会议纪要权限',
+        id: 'task_sp_1',
+        name: '生成我的开场要点',
+        description: '开会前先过一遍要点',
+        actionPreview: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
       },
     ],
     runningSince: null,
@@ -124,20 +124,19 @@ const SEED_SUBSCRIPTIONS = [
     updatedAt: '2026-08-01T10:00:00Z',
   },
   {
-    id: 'sub_demo_meeting2',
-    eventId: 'meeting-end',
-    name: '智能会议2·晚间归档纪要与申请权限',
-    frequencyText: '每天 21:00',
+    id: 'sub_meeting_start_agenda',
+    eventId: 'meeting-start-30min',
+    name: '会议前·议程预读',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_m2_1',
-        name: '归档当日所有会议',
-        description: '晚上 21:00 把当天所有会议自动归档',
-        actionPreview: '汇总当天的会议纪要，自动归档到云文档',
+        id: 'task_sa_1',
+        name: '拉取历史议题与参会人背景',
+        description: '会前把议程与背景读一遍',
+        actionPreview: '读取本次会议议程 + 参会人历史会议，输出背景速览',
       },
     ],
     runningSince: null,
@@ -145,20 +144,19 @@ const SEED_SUBSCRIPTIONS = [
     updatedAt: '2026-08-02T10:00:00Z',
   },
   {
-    id: 'sub_demo_meeting3',
+    id: 'sub_meeting_end_minutes',
     eventId: 'meeting-end',
-    name: '智能会议3·日度会议数据回顾（需补充会议标签）',
-    frequencyText: '每天 14:17',
+    name: '会议后·自动纪要',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_m3_1',
-        name: '日度会议数据回顾',
-        description: '每天下午回顾当日已开会议的数据',
-        actionPreview: '拉取当日会议数据 → 输出回顾短报告',
+        id: 'task_em_1',
+        name: '整理会议纪要',
+        description: '会后第一时间出纪要',
+        actionPreview: '基于会议录音/笔记自动生成议题、结论、待办的结构化纪要',
       },
     ],
     runningSince: null,
@@ -166,20 +164,19 @@ const SEED_SUBSCRIPTIONS = [
     updatedAt: '2026-08-03T10:00:00Z',
   },
   {
-    id: 'sub_demo_meeting4',
+    id: 'sub_meeting_end_actions',
     eventId: 'meeting-end',
-    name: '智能会议4·周度报告推送与会议洞察（需补充会议标签）',
-    frequencyText: '每逢周日 18:48',
+    name: '会议后·行动项归档',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_m4_1',
-        name: '周度报告推送与会议洞察',
-        description: '每周日 18:48 推送上周会议洞察',
-        actionPreview: '汇总上周所有会议 → 生成洞察 → 推送到群里',
+        id: 'task_ea_1',
+        name: '提取行动项入我的待办',
+        description: '把会议待办归到我名下',
+        actionPreview: '提取所有 action item 的 owner + deadline，自动写入我的待办',
       },
     ],
     runningSince: null,
@@ -187,20 +184,19 @@ const SEED_SUBSCRIPTIONS = [
     updatedAt: '2026-08-04T10:00:00Z',
   },
   {
-    id: 'sub_demo_weight_loss',
+    id: 'sub_meeting_end_weekly',
     eventId: 'meeting-end',
-    name: 'weight-loss-weekly-report',
-    frequencyText: '每逢周一 09:00',
+    name: '会议后·周报素材',
     enabled: true,
     status: 'active',
     proposer: '我',
     creator: DEMO_USER,
     tasks: [
       {
-        id: 'task_w_1',
-        name: '本周体重周报',
-        description: '汇总本周体重变化并推送周报',
-        actionPreview: '从表格读取本周体重 → 生成周报 → 发送',
+        id: 'task_ew_1',
+        name: '汇总本周会议进展',
+        description: '为周报自动攒素材',
+        actionPreview: '汇总本周所有会议的关键结论，生成周报草稿素材',
       },
     ],
     runningSince: null,
@@ -210,22 +206,25 @@ const SEED_SUBSCRIPTIONS = [
 ]
 
 // 各订阅的执行历史
-// v6：为 sub_demo_meeting1 准备 10 条样本执行（匹配详情页截图的 100% / 197s / 60K 概览）
+// v7：为「会议后·自动纪要」准备 10 条样本执行（匹配详情页截图的 100% / 197s / 60K 概览）
 const SEED_RUNS = [
-  { id: 'run_m1_1', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-13T13:10:05Z', status: 'success', tokens: 64719, durationSec: 156, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_2', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-12T13:09:15Z', status: 'success', tokens: 58246, durationSec: 106, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_3', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-11T13:10:20Z', status: 'success', tokens: 62379, durationSec: 171, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_4', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-10T11:57:09Z', status: 'success', tokens: 56059, durationSec: 69, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_5', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-09T11:57:20Z', status: 'success', tokens: 55058, durationSec: 40, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_6', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-08T11:57:57Z', status: 'success', tokens: 62406, durationSec: 88, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_7', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-07T11:59:14Z', status: 'success', tokens: 61746, durationSec: 165, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_8', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-06T12:01:11Z', status: 'success', tokens: 63021, durationSec: 210, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_9', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-05T11:55:48Z', status: 'success', tokens: 60987, durationSec: 250, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  { id: 'run_m1_10', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-04T11:56:02Z', status: 'success', tokens: 59832, durationSec: 180, summary: '已执行：归档昨日 + 今日会议、自动申请纪要权限' },
-  // 历史：meeting1 一条最早跑过；其他 4 条订阅尚未触发过（匹配截图的「暂无记录」）
-  { id: 'run_seed_old1', ruleId: 'sub_demo_meeting1', timestamp: '2026-08-02T11:50:00Z', status: 'success', tokens: 56000, summary: '首次启用：已执行' },
-  { id: 'run_seed_old_meet', ruleId: 'sub_demo_open_points', timestamp: '2026-08-12T14:30:00Z', status: 'success', tokens: 30000, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
-  { id: 'run_seed_old_meet2', ruleId: 'sub_demo_open_points', timestamp: '2026-08-11T14:30:00Z', status: 'success', tokens: 28500, summary: '「会议前的开场准备」已执行 1 项任务：生成我的开场要点' },
+  { id: 'run_em_1', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-13T11:10:05Z', status: 'success', tokens: 64719, durationSec: 156, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_2', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-12T11:09:15Z', status: 'success', tokens: 58246, durationSec: 106, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_3', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-11T11:10:20Z', status: 'success', tokens: 62379, durationSec: 171, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_4', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-10T11:57:09Z', status: 'success', tokens: 56059, durationSec: 69, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_5', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-09T11:57:20Z', status: 'success', tokens: 55058, durationSec: 40, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_6', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-08T11:57:57Z', status: 'success', tokens: 62406, durationSec: 88, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_7', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-07T11:59:14Z', status: 'success', tokens: 61746, durationSec: 165, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_8', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-06T12:01:11Z', status: 'success', tokens: 63021, durationSec: 210, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_9', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-05T11:55:48Z', status: 'success', tokens: 60987, durationSec: 250, summary: '已执行：整理会议纪要' },
+  { id: 'run_em_10', ruleId: 'sub_meeting_end_minutes', timestamp: '2026-08-04T11:56:02Z', status: 'success', tokens: 59832, durationSec: 180, summary: '已执行：整理会议纪要' },
+  // 其他订阅的少量历史
+  { id: 'run_sp_1', ruleId: 'sub_meeting_start_points', timestamp: '2026-08-13T09:30:00Z', status: 'success', tokens: 30000, durationSec: 60, summary: '已执行：生成开场要点' },
+  { id: 'run_sp_2', ruleId: 'sub_meeting_start_points', timestamp: '2026-08-11T09:30:00Z', status: 'success', tokens: 28500, durationSec: 55, summary: '已执行：生成开场要点' },
+  { id: 'run_aa_1', ruleId: 'sub_meeting_end_actions', timestamp: '2026-08-13T15:00:00Z', status: 'success', tokens: 41200, durationSec: 90, summary: '已执行：提取行动项' },
+  { id: 'run_aa_2', ruleId: 'sub_meeting_end_actions', timestamp: '2026-08-10T15:00:00Z', status: 'success', tokens: 36800, durationSec: 80, summary: '已执行：提取行动项' },
+  { id: 'run_aa_3', ruleId: 'sub_meeting_end_actions', timestamp: '2026-08-07T15:00:00Z', status: 'success', tokens: 38900, durationSec: 85, summary: '已执行：提取行动项' },
+  { id: 'run_ew_1', ruleId: 'sub_meeting_end_weekly', timestamp: '2026-08-08T17:00:00Z', status: 'success', tokens: 45000, durationSec: 120, summary: '已执行：汇总周报素材' },
 ]
 
 // ============== 工具 ==============
@@ -245,6 +244,7 @@ function loadOrInit(key, seed) {
 // 一次性迁移：把更早版本的 LS key 收尾 / 升级
 // v4 → v5：剥 bundledTasks；v5 → v6：seed 改了，强制刷新 subs + runs
 function migrateFromV4() {
+  // v4 → v5：剥 bundledTasks；v5/v6 → v7：seed 已改，旧数据直接丢弃重新初始化
   const v4pe = localStorage.getItem('am_proposed_events_v4')
   if (v4pe && !localStorage.getItem(LS_PROPOSED_EVENTS)) {
     try {
@@ -256,9 +256,9 @@ function migrateFromV4() {
       localStorage.removeItem('am_proposed_events_v4')
     } catch (e) { /* ignore */ }
   }
-  ;['am_subscriptions_v4', 'am_preset_tasks_v4', 'am_runs_v4'].forEach((k) => localStorage.removeItem(k))
-  // v5 subs/runs seed 已被 v6 替换；旧 v5 数据丢弃，从 v6 seed 重新初始化
-  ;['am_subscriptions_v5', 'am_runs_v5'].forEach((k) => localStorage.removeItem(k))
+  ;['am_proposed_events_v4', 'am_subscriptions_v4', 'am_preset_tasks_v4', 'am_runs_v4',
+    'am_subscriptions_v5', 'am_runs_v5',
+    'am_proposed_events_v6', 'am_subscriptions_v6', 'am_runs_v6'].forEach((k) => localStorage.removeItem(k))
 }
 
 function loadProposedEvents() {
@@ -297,7 +297,7 @@ function decorateSubscription(sub) {
     statusMeta: SUB_STATUS_META[sub.status] || SUB_STATUS_META.active,
     taskCount: (sub.tasks || []).length,
     // 给 UI 用的便利字段
-    frequencyText: sub.frequencyText || ev?.name || '未设置',
+    triggerText: ev?.name || '未设置',
     lastRunAt: lastRun ? lastRun.timestamp : null,
     lastRunStatus: lastRun ? lastRun.status : null,
     runningSince,
@@ -485,8 +485,6 @@ export function createSubscription(payload) {
     id,
     eventId: payload.eventId,
     name: (payload.name || '').trim() || ev.name,
-    // v6 用户端新字段
-    frequencyText: (payload.frequencyText || '').trim() || ev.name,
     enabled: true,
     status: 'active',
     proposer: '我',
@@ -576,11 +574,10 @@ export function simulateRun(subscriptionId) {
 }
 
 // 模拟聊天创建：直接生成一个新订阅（用户口吻自然语言 → 由龙虾「解读」）
-export function createTaskFromChat({ name, frequencyText, eventId, tasks }) {
+export function createTaskFromChat({ name, eventId, tasks }) {
   return createSubscription({
     eventId: eventId || 'meeting-end',
     name: (name || '').trim(),
-    frequencyText: (frequencyText || '').trim(),
     tasks: Array.isArray(tasks) && tasks.length > 0 ? tasks : [
       { name: name || '新任务', description: '', actionPreview: '由龙虾解读' },
     ],
@@ -645,6 +642,7 @@ export function resetDemo() {
     LS_PROPOSED_EVENTS, LS_SUBSCRIPTIONS, LS_RUNS,
     'am_preset_tasks_v4', 'am_proposed_events_v4', 'am_subscriptions_v4', 'am_runs_v4',
     'am_subscriptions_v5', 'am_runs_v5',
+    'am_proposed_events_v6', 'am_subscriptions_v6', 'am_runs_v6',
     'am_triggers_v1', 'am_templates_v2', 'am_rules_v2', 'am_runs_v2',
     'am_events_v1', 'am_subs_v1',
     'am_events_v3', 'am_preset_tasks_v3', 'am_subscriptions_v3', 'am_runs_v3',
