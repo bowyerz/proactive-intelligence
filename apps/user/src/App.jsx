@@ -8,7 +8,7 @@ import {
 import { api } from '@shared/api.js'
 import { BRAND } from '@shared/brand.js'
 import ScheduledPage from './pages/ScheduledPage.jsx'
-import CurrentPage from './pages/CurrentPage.jsx'
+import EventMarketPage from './pages/EventMarketPage.jsx'
 import TaskDetailPage from './pages/TaskDetailPage.jsx'
 import LobsterChatPanel from './components/LobsterChatPanel.jsx'
 
@@ -84,7 +84,7 @@ export default function App() {
       <div className="ua-page-head">
           <div className="ua-page-title">
           任务中心
-          <span className="ua-page-tag">v7 · 事件触发</span>
+          <span className="ua-page-tag">v8 · 事件触发</span>
         </div>
       </div>
       <div className="ua-tabs">
@@ -98,7 +98,7 @@ export default function App() {
           className={`ua-tab ${activeTab === 'current' ? 'active' : ''}`}
           onClick={() => setActiveTab('current')}
         >
-          当前任务
+          事件市场
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export default function App() {
           onChanged={bumpRefresh}
         />
       ) : (
-        <CurrentPage
+        <EventMarketPage
           refreshTick={refreshTick}
           onOpenDetail={setDetailId}
           onChanged={bumpRefresh}

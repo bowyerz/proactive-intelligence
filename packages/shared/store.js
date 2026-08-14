@@ -2,12 +2,13 @@
 // 数据持久化在 localStorage，所有交互为本地状态。
 //
 // =================================================================
-// v7 数据模型：用户端极简 + 事件触发
+// v8 数据模型：用户端极简 + 事件触发
 // =================================================================
 //
 // 用户看到的是「事件任务」——每个任务绑定在 2 个固定事件之一下
 // （会议开始前 30 分钟 / 会议结束）。事件一旦触发（来自飞书日历），
 // 龙虾就自动执行该任务下的动作。用户端没有「定时 / cron」概念，全部由事件驱动。
+// 用户端 Tab：事件任务（订阅列表）/ 事件市场（2 个固定事件 + 各自绑定的任务）。
 //
 // 系统事件（固定 2 个，不允许开发者改）：
 //   EVENTS               飞书日历来的 2 个原生事件（会议开始前 30 分钟 / 会议结束）
@@ -18,8 +19,8 @@
 //
 // 用户订阅层（v6 的核心简化）：
 //   SUBSCRIPTIONS        每个订阅挂在一个 eventId 下，订阅自带一组用户自己定义的任务 tasks[]
-//                        字段新增 frequencyText（给用户展示的频率文，如「每天 13:01」）和
-//                        runningSince（点击「立即执行」后未过 30s 视为执行中）
+//                        tasks[] 每个任务含 name（动作名）/ description（为什么做、说明）/ actionPreview（龙虾具体怎么做）
+//                        runningSince（点击「立即执行」后未过 60s 视为执行中）
 //                        提交即启用（status='active', enabled=true），不再走任何审核
 //   RUNS                 订阅启用后，每次事件触发产出一条执行记录
 //
@@ -28,9 +29,9 @@
 //   PROPOSED_EVENTS (active 后) 也作为可订阅的事件来源
 //   SUBSCRIPTION    通过 id 反查 RUNS
 
-const LS_PROPOSED_EVENTS = 'am_proposed_events_v7'
-const LS_SUBSCRIPTIONS = 'am_subscriptions_v7'
-const LS_RUNS = 'am_runs_v7'
+const LS_PROPOSED_EVENTS = 'am_proposed_events_v8'
+const LS_SUBSCRIPTIONS = 'am_subscriptions_v8'
+const LS_RUNS = 'am_runs_v8'
 
 export const DEMO_USER = 'demo_user'
 
@@ -58,8 +59,8 @@ export const EVENTS = [
     bg: '#fff7e6',
     color: '#d48806',
     source: '飞书日历',
-    desc: '每个会议开始前 30 分钟触发，来自飞书日历',
-    checklist: '梳理议程 · 拉历史议题 · 准备要点',
+    desc: '飞书日历检测到你的会议将在 30 分钟后开始时自动触发。此时你通常正在做会前准备，龙虾会帮你预读议程、梳理参会人背景、生成开场要点，让你带着准备进入会议。',
+    checklist: '预读议程与历史议题 · 梳理参会人背景 · 生成我的开场要点 · 标记待跟进事项',
     systemEvent: true,
   },
   {
@@ -69,8 +70,8 @@ export const EVENTS = [
     bg: '#e6fffb',
     color: '#08979c',
     source: '飞书日历',
-    desc: '会议结束时触发，来自飞书日历',
-    checklist: '纪要 · 行动项 · 收尾通知',
+    desc: '飞书日历检测到你的会议刚结束时自动触发。此时会议内容最容易遗忘，龙虾会立刻整理结构化纪要、提取行动项归档到你的待办、并把关键结论汇总成周报素材。',
+    checklist: '生成结构化会议纪要 · 提取行动项（owner+截止） · 归档到我的待办 · 汇总周报素材',
     systemEvent: true,
   },
 ]
@@ -115,8 +116,8 @@ const SEED_SUBSCRIPTIONS = [
       {
         id: 'task_sp_1',
         name: '生成我的开场要点',
-        description: '开会前先过一遍要点',
-        actionPreview: '基于参会人背景 + 历史议题，整理 3 条要点提醒我',
+        description: '会议开始前 30 分钟，结合本次会议主题与参会人，帮你整理一段可直接照着说的开场白，避免临场卡壳。',
+        actionPreview: '读取会议标题、议程与参会人列表，自动生成 3 条开场要点：本次会议要解决的问题 / 需要对方拍板的决策 / 我方核心诉求，可直接复制进聊天框或带入会场。',
       },
     ],
     runningSince: null,
@@ -135,8 +136,8 @@ const SEED_SUBSCRIPTIONS = [
       {
         id: 'task_sa_1',
         name: '拉取历史议题与参会人背景',
-        description: '会前把议程与背景读一遍',
-        actionPreview: '读取本次会议议程 + 参会人历史会议，输出背景速览',
+        description: '会前把相关背景一次性备齐：本次会议要讨论的历史议题、对方上次提过的诉求、各方立场，省去你翻聊天记录。',
+        actionPreview: '拉取本次会议的议程文档 + 参会人在历史会议中的发言与结论，输出一页「背景速览」：历史卡点 / 各方立场 / 本次会议需推动的 2-3 件事。',
       },
     ],
     runningSince: null,
@@ -155,8 +156,8 @@ const SEED_SUBSCRIPTIONS = [
       {
         id: 'task_em_1',
         name: '整理会议纪要',
-        description: '会后第一时间出纪要',
-        actionPreview: '基于会议录音/笔记自动生成议题、结论、待办的结构化纪要',
+        description: '会议一结束立刻产出一份能直接发出去的结构化纪要，不用你再回忆或整理录音。',
+        actionPreview: '基于会议录音转写 / 共享文档，自动提取：议题清单、各方结论、遗留问题、明确决策。按「结论先行」排版输出 Markdown 纪要，可直接转发到群。',
       },
     ],
     runningSince: null,
@@ -175,8 +176,8 @@ const SEED_SUBSCRIPTIONS = [
       {
         id: 'task_ea_1',
         name: '提取行动项入我的待办',
-        description: '把会议待办归到我名下',
-        actionPreview: '提取所有 action item 的 owner + deadline，自动写入我的待办',
+        description: '把会上说的「谁、什么时候、交什么」全部抓出来，自动落进你的待办，不漏项。',
+        actionPreview: '扫描纪要中的 action item，识别每条的负责人（owner）、交付物与截止时间（deadline），自动写入你的待办列表并打上「来自会议」标签。',
       },
     ],
     runningSince: null,
@@ -195,8 +196,8 @@ const SEED_SUBSCRIPTIONS = [
       {
         id: 'task_ew_1',
         name: '汇总本周会议进展',
-        description: '为周报自动攒素材',
-        actionPreview: '汇总本周所有会议的关键结论，生成周报草稿素材',
+        description: '周五前自动把本周各场会议的关键结论攒成一份周报素材，写周报时直接粘贴。',
+        actionPreview: '汇总本周所有已结束会议的核心结论与进度，按「项目 / 进展 / 风险」三段式生成周报草稿，方便你在此基础上润色提交。',
       },
     ],
     runningSince: null,
@@ -258,7 +259,8 @@ function migrateFromV4() {
   }
   ;['am_proposed_events_v4', 'am_subscriptions_v4', 'am_preset_tasks_v4', 'am_runs_v4',
     'am_subscriptions_v5', 'am_runs_v5',
-    'am_proposed_events_v6', 'am_subscriptions_v6', 'am_runs_v6'].forEach((k) => localStorage.removeItem(k))
+    'am_proposed_events_v6', 'am_subscriptions_v6', 'am_runs_v6',
+    'am_proposed_events_v7', 'am_subscriptions_v7', 'am_runs_v7'].forEach((k) => localStorage.removeItem(k))
 }
 
 function loadProposedEvents() {
@@ -282,7 +284,7 @@ function decorateSubscription(sub) {
   const lastRun = runs
     .slice()
     .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))[0] || null
-  // v6：runningSince 在 60s 内视为「执行中」（用于「当前任务」Tab）
+  // runningSince 在 60s 内视为「执行中」（用于详情页「执行中」角标）
   const runningSince = sub.runningSince ? String(sub.runningSince) : null
   const isRunning = runningSince ? (Date.now() - new Date(runningSince).getTime() < 60 * 1000) : false
   return {
@@ -440,8 +442,8 @@ export function getSubscription(id) {
   return out
 }
 
-// 列出「当前任务」——包括：执行中的订阅 (runningSince 60s 内) +
-// 最近 60s 内刚跑完的订阅（lastRunAt 60s 内）。给 user/当前任务 Tab 用。
+// 列出「正在执行 / 刚跑完」的订阅——包括：执行中的订阅 (runningSince 60s 内) +
+// 最近 60s 内刚跑完的订阅（lastRunAt 60s 内）。当前用户端页面已不再使用，保留供兼容。
 export function listCurrentTasks() {
   const now = Date.now()
   const arr = loadSubscriptions()
@@ -643,6 +645,7 @@ export function resetDemo() {
     'am_preset_tasks_v4', 'am_proposed_events_v4', 'am_subscriptions_v4', 'am_runs_v4',
     'am_subscriptions_v5', 'am_runs_v5',
     'am_proposed_events_v6', 'am_subscriptions_v6', 'am_runs_v6',
+    'am_proposed_events_v7', 'am_subscriptions_v7', 'am_runs_v7',
     'am_triggers_v1', 'am_templates_v2', 'am_rules_v2', 'am_runs_v2',
     'am_events_v1', 'am_subs_v1',
     'am_events_v3', 'am_preset_tasks_v3', 'am_subscriptions_v3', 'am_runs_v3',

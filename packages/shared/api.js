@@ -1,6 +1,6 @@
 // 前端 API 层。Demo 部署为纯静态站点（GitHub Pages），所有请求由浏览器端
 // store.js 处理（数据在 localStorage），不依赖后端服务。
-// 接口对应 v7 模型：用户端「事件触发任务」——订阅绑定在 2 个固定事件之一下
+// 接口对应 v8 模型：用户端「事件触发任务」——订阅绑定在 2 个固定事件之一下
 // （会议开始前 30 分钟 / 会议结束），事件触发时龙虾自动执行。
 // 管理后台仍负责审核「事件提案」本身（开发者创建事件、用户自建任务）。
 
@@ -45,7 +45,7 @@ export const api = {
   submitProposedEvent: (payload) => wrap(() => store.submitProposedEvent(payload)),
   proposerProposedEvents: (proposer) => wrap(() => store.proposerProposedEvents(proposer)),
 
-  // 订阅 / 任务（v6 用户端主入口）
+  // 订阅 / 任务（v8 用户端主入口）
   listSubscriptions: () => wrap(() => store.listSubscriptions()),
   listCurrentTasks: () => wrap(() => store.listCurrentTasks()),
   getSubscription: (id) => wrap(() => {

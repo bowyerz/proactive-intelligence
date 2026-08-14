@@ -76,7 +76,7 @@ export default function ScheduledPage({ refreshTick, onOpenDetail, onChanged }) 
 }
 
 /**
- * 单个任务行（定时任务列表里渲染）
+ * 单个任务行（事件任务列表里渲染）
  */
 function TaskRow({ sub, onClick, onToggle }) {
   const lastRunText = sub.lastRunAt

@@ -14,6 +14,7 @@ dist/
 # 本地验证用构建输出（沙箱内绕过 safe-delete 拦截，outDir 放在仓库外的 dist_verify；
 # 但有时也会落在仓库内，统一忽略，不污染 git status）
 dist_verify/
+dist_verify*/
 
 # Vite 临时配置文件（构建时生成，构建后由 Vite 自行清理；
 # 在带 safe-delete 拦截的沙箱里清理 rm 被拦截会残留，故忽略）

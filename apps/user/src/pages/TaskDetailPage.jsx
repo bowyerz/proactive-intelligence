@@ -21,7 +21,6 @@ import { api } from '@shared/api.js'
 export default function TaskDetailPage({ id, onBack, onChanged }) {
   const { message, modal } = AntApp.useApp()
   const [sub, setSub] = useState(null)
-  const [descExpanded, setDescExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm] = Form.useForm()
   const [running, setRunning] = useState(false)
@@ -106,16 +105,16 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
   const submitEdit = async () => {
     try {
       const vals = await editForm.validateFields()
-      // 走 updateSubscriptionTasks 避免拆散订阅；同时把 name / frequencyText 也覆盖上
+      // 走 updateSubscriptionTasks 避免拆散订阅；同时把 name / eventId 也覆盖上
       // store 没专门的 updateSubscriptionMeta，我们直接 createSubscription + deleteSubscription — 太重；
-      // 简单做法：通过 updateSubscriptionTasks 改 tasks，并把 name / frequencyText 用一个轻量 API 来覆盖。
+      // 简单做法：通过 updateSubscriptionTasks 改 tasks，再用 patchSubscriptionMeta 覆盖 name / eventId。
       await api.updateSubscriptionTasks(id, [{
         id: sub.tasks?.[0]?.id,
         name: vals.taskName,
         description: vals.taskDescription,
         actionPreview: vals.taskAction,
       }])
-      // name / frequencyText：调底层 store 没有暴露；我们用 createSubscription 不合适
+      // name / eventId：store 没暴露专门的 updateSubscriptionMeta，这里直接本地打补丁
       // —— 直接走 toggleSubscription(id, ...) 不行。
       // 临时方案：覆写整个订阅。我们直接调用 store 子方法不暴露，所以这里走手动 setItem 简易版：
       patchSubscriptionMeta(id, { name: vals.name, eventId: vals.eventId })
@@ -136,10 +135,6 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
     )
   }
 
-  const desc = (sub.tasks?.[0]?.description || '').trim()
-  const descTruncated = desc.length > 90 && !descExpanded
-  const descText = descTruncated ? desc.slice(0, 90) + '…' : desc
-
   return (
     <div className="ua-detail-shell">
       <TopBar onBack={onBack} title={sub.name} />
@@ -152,19 +147,21 @@ export default function TaskDetailPage({ id, onBack, onChanged }) {
           触发事件：{sub.eventName}
         </div>
 
-        {desc && (
-          <div className="ua-detail-desc">
-            {descText}
-            {desc.length > 90 && (
-              <span
-                className="ua-desc-toggle"
-                onClick={() => setDescExpanded(!descExpanded)}
-              >
-                {descExpanded ? ' 收起' : ' 展开'}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="ua-detail-section-label">任务清单 · 共 {(sub.tasks || []).length} 项</div>
+        <div className="ua-task-list">
+          {(sub.tasks || []).map((t, i) => (
+            <div className="ua-task-card" key={t.id || i}>
+              <div className="ua-task-card-name">{i + 1}. {t.name}</div>
+              {t.description && <div className="ua-task-card-desc">{t.description}</div>}
+              {t.actionPreview && (
+                <div className="ua-task-card-action">
+                  <span className="ua-lobster">🦞</span>
+                  <span><b>龙虾会主动：</b>{t.actionPreview}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
 
         <div className="ua-detail-section-label">最近 10 次执行数据概览</div>
         <div className="ua-stats">
@@ -297,7 +294,7 @@ function formatTs(ts) {
  * 没专门暴露 updateSubscriptionMeta，所以在用户端本地直接打补丁。
  */
 function patchSubscriptionMeta(id, patch) {
-  const LS = 'am_subscriptions_v7'
+  const LS = 'am_subscriptions_v8'
   try {
     const raw = localStorage.getItem(LS)
     if (!raw) return
